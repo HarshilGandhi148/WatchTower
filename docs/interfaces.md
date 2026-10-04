@@ -16,6 +16,27 @@ section 6 with a reviewed shared contract PR. Add serialization compatibility
 tests. Envelopes validate structure; runtime also verifies the actual configured
 sender address and case/snapshot references. An enum is not authentication.
 
+### FlowCandidate (proposal, congestion owner)
+
+`FlowCandidate` in shared/contracts.py wraps a `MessageEnvelope` and follows plan
+6.3. Structural rules, all enforced at construction:
+
+- Sender must be congestion; the window is aware UTC and ends after it starts.
+- Every `TrafficMetric` has a unit, a `MetricBasis` (observed, confirmed_record,
+  inferred, estimated, projected) and evidence IDs; those and `faa_event_ids` must
+  already be listed in the envelope's `evidence_ids`.
+- `proposed_action_type` comes from the bounded `ActionType` catalog (no aircraft
+  control). Only `change_worth_reviewing` may carry action parameters;
+  `no_change`/`insufficient_data` propose nothing; `insufficient_data` must list
+  `required_missing_inputs`; an actionable candidate cannot have `unavailable` quality.
+- A downstream restriction needs an FAA event and reliably associated flights.
+- `weather_assessment_id` is optional, so clear weather never blocks a candidate.
+
+Not enforced here: parameter limits (validator checks them against project bounds),
+that evidence IDs exist in storage, and uAgents serialization. Review questions:
+weather owner confirms `weather_assessment_id` semantics; validation owner confirms
+the validator can check the action/parameter names and wants no further fields.
+
 The cycle is weather ↔ congestion → validation. Cases use fixed evidence;
 there is at most one correction and two specialist exchanges. Request retries
 are idempotent. Agents communicate through messages and shared records, never
