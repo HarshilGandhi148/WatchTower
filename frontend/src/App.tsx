@@ -11,7 +11,7 @@ import { LiveOverview } from './components/dashboard/LiveOverview';
 import { DecisionHistory } from './components/history/DecisionHistory';
 import { ProjectionDrawer } from './components/projections/ProjectionDrawer';
 import { Popover } from './components/workspace/Popover';
-import { WorkspaceDrawer } from './components/workspace/WorkspaceDrawer';
+import { AdvisoryDecision } from './components/advisories/AdvisoryDecision';
 import { activeAdvisories } from './features/advisories/policy';
 import type { Advisory } from './features/live/types';
 import { useClock, useDashboard } from './features/live/useDashboard';
@@ -21,15 +21,15 @@ import { ageLabel, formatTime } from './lib/time';
 
 const liveClient = createDashboardClient();
 interface Selection {
-  projectionId: string;
+  advisoryId: string;
+  version: number;
+  projectionId: string | null;
   snapshotId: string;
   title: string;
   acceptedBy?: string;
   returnPage?: Page;
 }
-type SidePanel =
-  | { kind: 'projection' }
-  | { kind: 'advisory'; id: string; version: number; editing: boolean };
+type SidePanel = { kind: 'projection' };
 type Page = 'overview' | 'history';
 const currentPage = (): Page =>
   window.location.hash === '#/history' ? 'history' : 'overview';
@@ -54,6 +54,13 @@ export default function App({
   const timezone = frontendConfig.displayTimezone;
   const [page, setPage] = useState<Page>(currentPage);
   const [minute, setMinute] = useState(0);
+  const [branch, setBranch] = useState<'baseline' | 'proposed'>('proposed');
+  const [selectedAircraftId, setSelectedAircraftId] = useState<string | null>(
+    null,
+  );
+  const selectAircraft = useCallback((id: string) => {
+    setSelectedAircraftId((current) => (current === id ? null : id));
+  }, []);
   const [selection, setSelection] = useState<Selection | null>(null);
   const [sidePanel, setSidePanel] = useState<SidePanel | null>(null);
   useEffect(() => {
@@ -75,12 +82,23 @@ export default function App({
   };
   const active = activeAdvisories(state.advisories, now);
   const revising = state.advisories.filter((a) => a.status === 'revalidating');
-  const reviewed =
-    sidePanel?.kind === 'advisory'
-      ? state.advisories.find(
-          (a) => a.id === sidePanel.id && a.version === sidePanel.version,
-        )
-      : undefined;
+  const reviewed = selection
+    ? state.advisories.find(
+        (advisory) =>
+          advisory.id === selection.advisoryId &&
+          advisory.version === selection.version,
+      )
+    : undefined;
+  const projection = state.projections.find(
+    (result) => result.id === selection?.projectionId,
+  );
+  const acceptedBy =
+    state.history.find(
+      (entry) =>
+        entry.advisoryId === selection?.advisoryId &&
+        entry.version === selection?.version &&
+        entry.status === 'approved',
+    )?.actor ?? selection?.acceptedBy;
   const currentFocus = () => {
     const element = document.activeElement;
     return element instanceof HTMLElement &&
@@ -115,32 +133,35 @@ export default function App({
     setSidePanel(null);
     pendingFocus.current = { target: sideReturnFocus.current };
   };
-  const openReview = (advisory: Advisory, editing = false) => {
-    sideReturnFocus.current = currentFocus();
-    setSelection(null);
-    setSidePanel({
-      kind: 'advisory',
-      id: advisory.id,
-      version: advisory.version,
-      editing,
-    });
-  };
   const openProjection = (advisory: Advisory, approved = false) => {
-    if (!advisory.projectionId) return;
-    projectionReturnFocus.current =
-      sidePanel?.kind === 'advisory' ? sideReturnFocus.current : currentFocus();
+    if (!approved) {
+      projectionReturnFocus.current = currentFocus();
+      sideReturnFocus.current = currentFocus();
+    }
     navigate('overview');
     setMinute(0);
+    setBranch('proposed');
+    setSelectedAircraftId(null);
+    const actor = client
+      .getSnapshot()
+      .history.find(
+        (entry) =>
+          entry.advisoryId === advisory.id &&
+          entry.version === advisory.version &&
+          entry.status === 'approved',
+      )?.actor;
     setSelection({
+      advisoryId: advisory.id,
+      version: advisory.version,
       projectionId: advisory.projectionId,
       snapshotId: advisory.snapshotId,
       title: advisory.title,
       acceptedBy: approved
-        ? (state.session?.displayName ?? 'Controller')
+        ? (actor ?? state.session?.displayName ?? 'Controller')
         : undefined,
     });
+    setSidePanel({ kind: 'projection' });
   };
-  const openEdit = (advisory: Advisory) => openReview(advisory, true);
   const openAcceptedProjection = (advisory: Advisory) =>
     openProjection(advisory, true);
   const sources = state.sources.length
@@ -160,21 +181,11 @@ export default function App({
         attribution: '',
         attributionUrl: undefined,
       }));
-  const card = (advisory: Advisory, detail = false) => (
+  const card = (advisory: Advisory) => (
     <AdvisoryCard
-      key={`${advisory.id}-${advisory.version}-${detail && sidePanel?.kind === 'advisory' && sidePanel.editing}`}
+      key={`${advisory.id}-${advisory.version}`}
       advisory={advisory}
-      state={state}
-      client={client}
-      now={now}
       timezone={timezone}
-      compact={!detail}
-      initialEditing={
-        detail && sidePanel?.kind === 'advisory' && sidePanel.editing
-      }
-      onReview={openReview}
-      onEdit={openEdit}
-      onApproveRecorded={openAcceptedProjection}
       onPreview={openProjection}
     />
   );
@@ -282,6 +293,7 @@ export default function App({
               {state.session.displayName}
             </span>
           )}
+          {tools}
         </div>
       </header>
       <div className="workspace-statusbar">
@@ -308,6 +320,9 @@ export default function App({
                 </>
               }
             >
+              <strong>
+                {source.name} · {source.status}
+              </strong>
               <p>{source.detail}</p>
               <small>
                 Source time: {formatTime(source.sourceAtUtc, timezone)}
@@ -365,17 +380,22 @@ export default function App({
           <LiveOverview
             id={overviewId}
             scenario={
-              selection
+              selection?.projectionId
                 ? {
                     ...selection,
-                    projection: state.projections.find(
-                      (p) => p.id === selection.projectionId,
-                    ),
+                    projection,
+                    acceptedBy,
+                    autoplay: Boolean(selection.acceptedBy),
                     minute,
+                    branch,
+                    selectedAircraftId,
                   }
                 : null
             }
             playbackVisible={page === 'overview'}
+            reviewOpen={Boolean(sidePanel)}
+            onBranchChange={setBranch}
+            onSelectAircraft={selectAircraft}
             onMinuteChange={setMinute}
             onCloseProjection={closeProjection}
             onScenarioDetails={() => {
@@ -440,37 +460,38 @@ export default function App({
                 ))}
               </div>
             </section>
-            {sidePanel?.kind === 'projection' && selection && (
+            {sidePanel && selection && (
               <ProjectionDrawer
-                key={`${selection.projectionId}-${selection.snapshotId}`}
-                projection={state.projections.find(
-                  (p) => p.id === selection.projectionId,
-                )}
+                key={`${selection.advisoryId}-${selection.version}-${selection.snapshotId}`}
+                projection={projection}
                 expectedSnapshotId={selection.snapshotId}
                 title={selection.title}
-                acceptedBy={selection.acceptedBy}
+                acceptedBy={acceptedBy}
+                advisory={reviewed}
                 now={now}
                 timezone={timezone}
                 minute={minute}
-                onMinuteChange={setMinute}
+                mode={state.mode}
+                selectedAircraftId={selectedAircraftId}
+                onSelectAircraft={selectAircraft}
                 onClose={closeSidePanel}
+                footer={
+                  reviewed && selection.returnPage !== 'history' ? (
+                    <AdvisoryDecision
+                      key={`${reviewed.id}-${reviewed.version}`}
+                      advisory={reviewed}
+                      state={state}
+                      client={client}
+                      now={now}
+                      projectionReady={Boolean(
+                        projection &&
+                        projection.snapshotId === reviewed.snapshotId,
+                      )}
+                      onApproveRecorded={openAcceptedProjection}
+                    />
+                  ) : undefined
+                }
               />
-            )}
-            {sidePanel?.kind === 'advisory' && (
-              <WorkspaceDrawer
-                key={`${sidePanel.id}-${sidePanel.version}-${sidePanel.editing}`}
-                title="Advisory details"
-                onClose={closeSidePanel}
-              >
-                {reviewed ? (
-                  card(reviewed, true)
-                ) : (
-                  <p role="status">
-                    This advisory version is no longer available. Review the
-                    current queue.
-                  </p>
-                )}
-              </WorkspaceDrawer>
             )}
           </div>
         </div>
@@ -485,7 +506,13 @@ export default function App({
               projectionReturnFocus.current = historyButton.current;
               navigate('overview');
               setMinute(0);
+              setBranch('proposed');
+              setSelectedAircraftId(null);
+              sideReturnFocus.current = historyButton.current;
+              setSidePanel({ kind: 'projection' });
               setSelection({
+                advisoryId: entry.advisoryId,
+                version: entry.version,
                 projectionId: entry.projectionId,
                 snapshotId: entry.snapshotId,
                 title: entry.title,
@@ -496,12 +523,6 @@ export default function App({
           />
         )}
       </div>
-      <footer className="workspace-footer">
-        <span>
-          Human-reviewed flow support · Decisions select projected scenarios
-        </span>
-        {tools}
-      </footer>
     </main>
   );
 }

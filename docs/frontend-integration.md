@@ -89,3 +89,14 @@ same validated snapshot before enabling them in live mode. Missing routes or
 invalid coordinates leave path playback unavailable; aggregate model values can
 still be inspected. The MHacks sample routes are hand-authored TEST fixtures,
 not computed by the agents or aggregate projection, including after demo edits.
+
+
+## Frontend-only review controls
+
+Branch selection (`baseline` / `proposed`) and selected aircraft ID are local
+presentation state, not reducer arguments or database fields. They preserve the
+fixed snapshot and do not recalculate routes. The review pane compares exact
++15 samples and displays no horizon delta unless both values are supported.
+Playback uses ordered supplied waypoints only. Queue decisions have moved into
+the versioned review footer; acknowledgement and authorization contracts above
+remain unchanged. These controls require no backend schema migration.
