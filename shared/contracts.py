@@ -1,7 +1,7 @@
 """Shared domain contracts for observations and the three-agent workflow.
 
 Observation DTOs preserve the implemented SpacetimeDB ingestion interface.
-FlowCandidate and WeatherAssessmentRequest extend the agent payload catalog;
+FlowCandidate, WeatherAssessmentRequest and ValidatedAdvisory extend the agent payload catalog;
 shared/messages.py provides envelope and weather-exchange wire serialization.
 Declared sender roles describe structure, not authentication.
 """
@@ -269,6 +269,143 @@ class FlowCandidate:
                 raise ValueError("A downstream restriction needs an FAA event reference")
             if not self.affected_flight_ids:
                 raise ValueError("A downstream restriction needs reliably associated flights")
+
+
+class AdvisoryPriority(StrEnum):
+    INFORMATION = "information"
+    ATTENTION = "attention"
+    TIME_SENSITIVE = "time_sensitive"
+
+
+class AdvisoryStatus(StrEnum):
+    """Advisory lifecycle (plan section 7). Only controller reducers move past pending."""
+
+    PENDING_REVIEW = "pending_review"
+    APPROVED = "approved"
+    IGNORED = "ignored"
+    EXPIRED = "expired"
+    SUPERSEDED = "superseded"
+
+
+MAX_ADVISORY_TEXT = 500
+
+
+def _check_display_text(value: object, field_name: str) -> None:
+    _check_text(value, field_name)
+    assert isinstance(value, str)
+    if len(value) > MAX_ADVISORY_TEXT or any(ord(c) < 32 for c in value):
+        raise ValueError(f"{field_name} must be at most {MAX_ADVISORY_TEXT} printable characters")
+
+
+def _check_utc(value: object, field_name: str) -> None:
+    if not isinstance(value, datetime) or value.utcoffset() != timedelta(0):
+        raise ValueError(f"{field_name} must be an aware UTC datetime")
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ValidatedAdvisory:
+    """A validated, versioned advisory awaiting human review (plan section 6.4).
+
+    The validator publishes only ``pending_review``; approval, ignore, expiry and
+    supersession are recorded by authorized backend reducers, never by an agent.
+    ``material_fingerprint`` lets a later cycle recognise an unchanged advisory.
+    """
+
+    advisory_id: str
+    version: int
+    case_id: str
+    snapshot_id: str
+    advisory_type: AdvisoryType
+    title: str
+    suggested_response: str
+    reason: str
+    priority: AdvisoryPriority
+    owner_role: str
+    affected_resource: str
+    window_start_utc: datetime
+    window_end_utc: datetime
+    evidence_ids: tuple[str, ...]
+    quality: EvidenceQuality
+    material_fingerprint: str
+    created_at_utc: datetime
+    expires_at_utc: datetime
+    affected_flight_ids: tuple[str, ...] = ()
+    projection_id: str | None = None
+    action_type: ActionType | None = None
+    action_parameters: tuple[ActionParameter, ...] = ()
+    tradeoffs: tuple[str, ...] = ()
+    assumptions: tuple[str, ...] = ()
+    limitations: tuple[str, ...] = ()
+    status: AdvisoryStatus = AdvisoryStatus.PENDING_REVIEW
+    airport_icao: str = "KDTW"
+
+    def __post_init__(self) -> None:
+        if self.status is not AdvisoryStatus.PENDING_REVIEW:
+            raise ValueError("Validation publishes pending_review only; controllers decide")
+        if self.airport_icao != "KDTW":
+            raise ValueError("This project supports airport KDTW")
+        for name in ("advisory_id", "case_id", "snapshot_id", "material_fingerprint"):
+            _check_text(getattr(self, name), name)
+        if type(self.version) is not int or self.version < 1:
+            raise ValueError("version must be a positive integer")
+        for name, enum_type in (
+            ("advisory_type", AdvisoryType),
+            ("priority", AdvisoryPriority),
+            ("quality", EvidenceQuality),
+        ):
+            if not isinstance(getattr(self, name), enum_type):
+                raise ValueError(f"{name} must be a {enum_type.__name__}")
+        if self.quality is EvidenceQuality.UNAVAILABLE:
+            raise ValueError("Unavailable evidence yields an internal result, not an advisory")
+        for name in ("title", "suggested_response", "reason", "owner_role", "affected_resource"):
+            _check_display_text(getattr(self, name), name)
+        for name in (
+            "window_start_utc",
+            "window_end_utc",
+            "created_at_utc",
+            "expires_at_utc",
+        ):
+            _check_utc(getattr(self, name), name)
+        if self.window_end_utc <= self.window_start_utc:
+            raise ValueError("Advisory window must end after it starts")
+        if self.expires_at_utc <= self.created_at_utc:
+            raise ValueError("Advisory must expire after it is created")
+
+        for name in (
+            "evidence_ids",
+            "affected_flight_ids",
+            "action_parameters",
+            "tradeoffs",
+            "assumptions",
+            "limitations",
+        ):
+            if not isinstance(getattr(self, name), tuple):
+                raise ValueError(f"{name} must be an immutable tuple")
+        if not self.evidence_ids:
+            raise ValueError("An advisory needs at least one evidence reference")
+        for name in ("evidence_ids", "affected_flight_ids"):
+            values = getattr(self, name)
+            for item in values:
+                _check_text(item, name)
+            if len(set(values)) != len(values):
+                raise ValueError(f"Duplicate entries in {name}")
+        for name in ("tradeoffs", "assumptions", "limitations"):
+            for item in getattr(self, name):
+                _check_display_text(item, name)
+        if self.projection_id is not None:
+            _check_text(self.projection_id, "projection_id")
+            if self.projection_id not in self.evidence_ids:
+                raise ValueError("The projection must be listed in evidence_ids")
+
+        if self.action_type is not None and not isinstance(self.action_type, ActionType):
+            raise ValueError("action_type must be an ActionType")
+        if not all(isinstance(p, ActionParameter) for p in self.action_parameters):
+            raise ValueError("action_parameters must contain ActionParameter values")
+        if self.action_parameters and self.action_type in (None, ActionType.INFORMATION_NOTICE):
+            raise ValueError("Only a flow-review action may carry parameters")
+        names = [p.name for p in self.action_parameters]
+        if len(set(names)) != len(names):
+            raise ValueError("Duplicate action parameter names")
 
 
 @dataclass(frozen=True, slots=True)
