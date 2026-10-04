@@ -3,6 +3,15 @@
 full_technical_plan.md is the product authority. This document identifies
 stable boundaries so the four workstreams can proceed independently.
 
+## Congestion CI compatibility repair
+
+The congestion contracts extend, rather than replace, the observation foundation.
+`WeatherRecord`, `AircraftObservation`, `AircraftBatch`, `SourceFailure`, and their
+UTC/measurement helpers remain available in `shared/contracts.py` alongside
+`FlowCandidate` and `WeatherAssessmentRequest`. The observation payload schema and
+generated database bindings are unchanged. Existing observation, congestion,
+serialization, and real SpacetimeDB tests verify this compatibility boundary.
+
 ## Agent messages
 
 shared/contracts.py defines the domain envelope and bounded enum catalog.
@@ -17,6 +26,49 @@ Implement WeatherAssessment, FlowCandidate, and ValidatedAdvisory against plan
 section 6 with a reviewed shared contract PR. Add serialization compatibility
 tests. Envelopes validate structure; runtime also verifies the actual configured
 sender address and case/snapshot references. An enum is not authentication.
+
+### FlowCandidate (proposal, congestion owner)
+
+`FlowCandidate` in shared/contracts.py wraps a `MessageEnvelope` and follows plan
+6.3. Structural rules, all enforced at construction:
+
+- Sender must be congestion; the window is aware UTC and ends after it starts.
+- Every `TrafficMetric` has a unit, a `MetricBasis` (observed, confirmed_record,
+  inferred, estimated, projected) and evidence IDs; those and `faa_event_ids` must
+  already be listed in the envelope's `evidence_ids`.
+- `proposed_action_type` comes from the bounded `ActionType` catalog (no aircraft
+  control). Only `change_worth_reviewing` may carry action parameters;
+  `no_change`/`insufficient_data` propose nothing; `insufficient_data` must list
+  `required_missing_inputs`; an actionable candidate cannot have `unavailable` quality.
+- A downstream restriction needs an FAA event and reliably associated flights.
+- `weather_assessment_id` is optional, so clear weather never blocks a candidate.
+
+Not enforced here: parameter limits (validator checks them against project bounds),
+that evidence IDs exist in storage, and uAgents serialization. Review questions:
+weather owner confirms `weather_assessment_id` semantics; validation owner confirms
+the validator can check the action/parameter names and wants no further fields.
+
+### WeatherAssessmentRequest (proposal, congestion owner)
+
+`WeatherAssessmentRequest` in shared/contracts.py is congestion's request for a weather
+assessment within one validation round: a `MessageEnvelope` (sender must be congestion,
+snapshot and evidence fixed for the case), an aware-UTC window, and `attempt` (1 or 2,
+matching the validation `assessment_round`). It is distinct from shared/orchestration.py's
+`AssessmentRequest`, which is validation asking congestion. A retry reuses the same
+`message_id`, so the weather agent can deduplicate.
+
+On the wire (shared/messages.py) it travels as `WeatherAssessmentRequestMessage`; the
+weather agent answers with `WeatherAssessmentReplyMessage`: a weather-role envelope whose
+`reply_to` names the request, a status from plan 6.2 (impact | no_material_impact |
+insufficient_data) and the stored `assessment_id`. The full WeatherAssessment payload
+stays with the weather owner.
+
+Congestion accepts a reply only from the configured weather address, for the same case
+and snapshot, answering the outstanding request, before expiry; late replies are
+rejected. Validation's `CandidateReady` requires a stored weather assessment, so a case
+whose weather exchange times out or returns no assessment id is not submitted and
+validation closes it as insufficient data at its deadline (to be confirmed with the
+validation and weather owners; the plan also allows a limited result instead).
 
 The cycle is weather ↔ congestion → validation. Cases use fixed evidence;
 there is at most one correction and two specialist exchanges. Request retries
