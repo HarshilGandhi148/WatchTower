@@ -9,14 +9,15 @@ Pure and testable; agent.py only moves messages. One cycle = one fixed snapshot:
 
 CandidateReady must name a stored weather assessment, so a case whose weather exchange
 timed out or came back without an assessment id is not submitted; validation closes it
-as insufficient data at its deadline. Candidates are kept in memory under their id until
-the SpacetimeDB adapter can store them; validation cannot load them across processes yet.
+as insufficient data at its deadline. Prepared candidates stay retryable until
+mark_persisted confirms the database commit.
+The async persistence wrapper saves the candidate and delivery before notification.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 
 from agents.congestion.candidates import (
@@ -64,6 +65,9 @@ class _Case:
     weather_requests: dict[str, WeatherAssessmentRequest] = field(default_factory=dict)
     submitted_rounds: set[int] = field(default_factory=set)
     abandoned: bool = False
+    prepared: dict[int, tuple[FlowCandidate, CandidateReady]] = field(default_factory=dict)
+    window_start: datetime | None = None
+    window_end: datetime | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,7 +89,9 @@ class CongestionService:
         self._thresholds = thresholds or ReviewThresholds()
         self._cases: dict[str, _Case] = {}
         self._previous_nearby: NearbyTraffic | None = None
-        self.candidates: dict[str, FlowCandidate] = {}  # placeholder store until the DB exists
+        self.candidates: dict[
+            str, FlowCandidate
+        ] = {}  # prepared records; durable storage is required
 
     @property
     def open_cases(self) -> tuple[str, ...]:
@@ -95,20 +101,33 @@ class CongestionService:
 
     def start_cycle(self, feeds: FeedSnapshot, now: datetime) -> MessageEnvelope:
         """Fix one snapshot and return the CaseOpened envelope to send to validation."""
-        stamp = now.strftime("%Y%m%dT%H%M%SZ")
-        case_id, snapshot_id = f"case-{stamp}", f"snap-{stamp}"
+        if (
+            not feeds.snapshot_id
+            or not feeds.case_id
+            or feeds.window_start_utc is None
+            or feeds.window_end_utc is None
+            or feeds.expires_at_utc is None
+        ):
+            raise ValueError("Congestion requires a stored evidence snapshot")
+        case_id, snapshot_id = feeds.case_id, feeds.snapshot_id
         existing = self._cases.get(case_id)
         if existing is not None:
+            if existing.opening.snapshot_id != snapshot_id:
+                raise ProtocolError("case is bound to another snapshot")
             return existing.opening
-        nearby = nearby_traffic(feeds.adsb, now)
-        # Placeholder evidence ids until records are stored through the DB adapter.
-        traffic_id = f"adsb-{stamp}" if feeds.adsb is not None else None
-        events = feeds.faa.events_for_airport("KDTW") if feeds.faa is not None else ()
-        refs = EvidenceRefs(
-            traffic=traffic_id,
-            faa_events=tuple((e.event_key, f"faa-{e.event_key}") for e in events),
+        now = feeds.window_start_utc
+        nearby = nearby_traffic(
+            feeds.adsb,
+            now,
+            center=(feeds.configuration.latitude_deg, feeds.configuration.longitude_deg),
+            radius_nm=feeds.configuration.radius_nm,
         )
-        evidence = tuple(x for x in (traffic_id, *(eid for _, eid in refs.faa_events)) if x)
+        refs = EvidenceRefs(
+            traffic=feeds.traffic_evidence_id,
+            faa_events=feeds.faa_evidence_ids,
+            demand=feeds.demand_evidence_id,
+        )
+        evidence = feeds.evidence_ids
         opening = MessageEnvelope(
             schema_version=MessageEnvelope.SUPPORTED_SCHEMA_VERSION,
             message_id=f"{case_id}:open",
@@ -118,10 +137,11 @@ class CongestionService:
             snapshot_id=snapshot_id,
             evidence_ids=evidence,
             airport_icao="KDTW",
-            valid_until_utc=now + OPENING_VALIDITY,
+            valid_until_utc=feeds.expires_at_utc,
         )
         previous = self._previous_nearby
-        horizon, thresholds = self._horizon, self._thresholds
+        horizon = int((feeds.window_end_utc - feeds.window_start_utc).total_seconds() / 60)
+        thresholds = self._thresholds
 
         def build(
             envelope: MessageEnvelope, signal: WeatherSignal, assessment_id: str | None
@@ -132,7 +152,9 @@ class CongestionService:
                     now_utc=now,
                     horizon_minutes=horizon,
                     nearby=nearby,
-                    demand=demand_windows(None, None, now),  # no AeroAPI yet
+                    demand=demand_windows(
+                        feeds.demand_records, feeds.demand_fetched_at_utc, now, horizon
+                    ),
                     evidence=refs,
                     weather_signal=signal,
                     weather_assessment_id=assessment_id,
@@ -142,7 +164,9 @@ class CongestionService:
                 )
             )
 
-        self._cases[case_id] = _Case(opening, build)
+        self._cases[case_id] = _Case(
+            opening, build, window_start=feeds.window_start_utc, window_end=feeds.window_end_utc
+        )
         self._previous_nearby = nearby
         return opening
 
@@ -178,8 +202,9 @@ class CongestionService:
                 e.snapshot_id,
                 e.evidence_ids,
                 now,
-                now,
-                now + timedelta(minutes=self._horizon),
+                case.window_start or case.opening.created_at_utc,
+                case.window_end or (case.opening.created_at_utc + timedelta(minutes=self._horizon)),
+                valid_until=e.valid_until_utc,
             )
         else:
             if case.request is None or 1 not in case.submitted_rounds:
@@ -221,18 +246,44 @@ class CongestionService:
             if view.state is CaseState.CLOSED or now >= case.request.envelope.valid_until_utc:
                 del self._cases[case_id]
                 continue
-            if view.state is not CaseState.READY or round_ in case.submitted_rounds:
+            if (
+                view.state not in (CaseState.READY, CaseState.SUBMITTED)
+                or round_ in case.submitted_rounds
+            ):
                 continue
             if view.weather_assessment_id is None:
                 if not case.abandoned:
                     case.abandoned = True
                     abandoned.append(case_id)
                 continue
-            candidate = self._coordinator.submit(case_id, case.build, now)
+            prepared = case.prepared.get(round_)
+            if prepared is None:
+                candidate = self._coordinator.submit(case_id, case.build, now)
+                candidate = replace(
+                    candidate,
+                    envelope=replace(
+                        candidate.envelope,
+                        valid_until_utc=min(
+                            candidate.envelope.valid_until_utc,
+                            case.request.envelope.valid_until_utc,
+                        ),
+                    ),
+                )
+                ready_message = self._candidate_ready(
+                    case, candidate, view.weather_assessment_id, now
+                )
+                prepared = (candidate, ready_message)
+                case.prepared[round_] = prepared
+            candidate, ready_message = prepared
             self.candidates[candidate.envelope.message_id] = candidate
-            case.submitted_rounds.add(round_)
-            ready.append(self._candidate_ready(case, candidate, view.weather_assessment_id, now))
+            ready.append(ready_message)
         return Advance(tuple(ready), tuple(abandoned))
+
+    def mark_persisted(self, ready: CandidateReady) -> None:
+        case = self._cases[ready.envelope.case_id]
+        if case.prepared[ready.assessment_round][1] != ready:
+            raise ProtocolError("persisted candidate differs from prepared candidate")
+        case.submitted_rounds.add(ready.assessment_round)
 
     @staticmethod
     def _candidate_ready(

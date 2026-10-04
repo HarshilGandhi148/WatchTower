@@ -79,6 +79,7 @@ jobs:
           spacetime --version
       - run: npm --prefix backend/module ci
       - run: npm --prefix frontend ci
+      - run: python -m pip install --require-hashes -r requirements-runtime.txt
       - run: make check-spacetime
 
   secrets:

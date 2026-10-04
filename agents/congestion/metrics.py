@@ -15,11 +15,13 @@ from datetime import datetime, timedelta
 from data.adsb import AdsbSnapshot
 from data.flightaware import Association, DemandRecord, FlightDirection, TimeKind
 from shared.contracts import EvidenceQuality, MetricBasis, TrafficMetric
+from shared.settings import AirportConfig
 
 EARTH_RADIUS_NM = 3440.065
 WINDOW_MINUTES = 5
-# Approximate KDTW reference point. Confirm against airport metadata before the demo.
-KDTW_REFERENCE_POINT = (42.2122, -83.3533)
+# Same FAA reference point used by the frontend demo and shared ingestion config.
+_AIRPORT = AirportConfig()
+KDTW_REFERENCE_POINT = (_AIRPORT.latitude_deg, _AIRPORT.longitude_deg)
 DEFAULT_RADIUS_NM = 40.0
 DEFAULT_MAX_POSITION_AGE_S = 30.0
 DEFAULT_MAX_SNAPSHOT_AGE = timedelta(seconds=60)
@@ -98,7 +100,10 @@ def nearby_traffic(
     for obs in snapshot.observations:
         if not obs.has_position:
             no_position += 1
-        elif obs.is_stale(max_position_age_s):
+        elif obs.is_stale(max_position_age_s) or (
+            obs.observed_at_utc is None
+            or (now_utc - obs.observed_at_utc).total_seconds() > max_position_age_s
+        ):
             stale += 1
         else:
             assert obs.latitude_deg is not None and obs.longitude_deg is not None
@@ -114,6 +119,8 @@ def nearby_traffic(
     inside = airborne + ground + unknown
     received = len(snapshot.observations)
     notes: list[str] = []
+    if received == 0 and snapshot.rejected_records:
+        return unavailable("all ADS-B records were rejected")
     if received == 0:
         quality = EvidenceQuality.LIMITED
         notes.append("empty response: quiet airspace and missing coverage are indistinguishable")
@@ -124,6 +131,9 @@ def nearby_traffic(
         notes.append("fewer than half of the reported aircraft had a fresh position")
     else:
         quality = EvidenceQuality.ADEQUATE
+    if snapshot.rejected_records or snapshot.duplicates_dropped:
+        quality = EvidenceQuality.LIMITED
+        notes.append("records were rejected or deduplicated")
     if unknown:
         notes.append("some aircraft have unknown ground state")
     return NearbyTraffic(
