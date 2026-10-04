@@ -19,7 +19,7 @@ lint:
 typecheck:
 	mypy
 
-check-js:
+check-js: check-bridge
 	npm --prefix backend/module run check
 	npm --prefix frontend run check
 
@@ -35,3 +35,12 @@ frontend:
 .PHONY: check-spacetime
 check-spacetime:
 	$(PYTHON) -m tests.integration.spacetimedb_live
+
+.PHONY: bridge check-bridge
+bridge:
+	backend/module/node_modules/.bin/esbuild bridge/index.ts --bundle --platform=node --format=cjs --outfile=.cache/bridge.cjs
+	node .cache/bridge.cjs
+
+check-bridge:
+	frontend/node_modules/.bin/tsc -p bridge/tsconfig.json
+	frontend/node_modules/.bin/prettier --check bridge

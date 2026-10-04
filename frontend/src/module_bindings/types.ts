@@ -19,6 +19,12 @@ export const AgentFindings = __t.object("AgentFindings", {
 });
 export type AgentFindings = __Infer<typeof AgentFindings>;
 
+export const AgentIdentity = __t.object("AgentIdentity", {
+  name: __t.string(),
+  identity: __t.identity(),
+});
+export type AgentIdentity = __Infer<typeof AgentIdentity>;
+
 export const AircraftObservations = __t.object("AircraftObservations", {
   aircraftId: __t.string(),
   provider: __t.string(),
@@ -50,6 +56,15 @@ export const AssessmentRequests = __t.object("AssessmentRequests", {
   contentJson: __t.string(),
 });
 export type AssessmentRequests = __Infer<typeof AssessmentRequests>;
+
+export const CongestionReading = __t.object("CongestionReading", {
+  id: __t.u64(),
+  eventKey: __t.string(),
+  rootId: __t.u64(),
+  createdAtUtc: __t.timestamp(),
+  payloadJson: __t.string(),
+});
+export type CongestionReading = __Infer<typeof CongestionReading>;
 
 export const EvidenceRecords = __t.object("EvidenceRecords", {
   evidenceId: __t.string(),
@@ -94,6 +109,15 @@ export const FlowCandidates = __t.object("FlowCandidates", {
   contentJson: __t.string(),
 });
 export type FlowCandidates = __Infer<typeof FlowCandidates>;
+
+export const IngestEvent = __t.object("IngestEvent", {
+  id: __t.u64(),
+  eventKey: __t.string(),
+  rootId: __t.u64(),
+  createdAtUtc: __t.timestamp(),
+  payloadJson: __t.string(),
+});
+export type IngestEvent = __Infer<typeof IngestEvent>;
 
 export const LatestFeeds = __t.object("LatestFeeds", {
   provider: __t.string(),
@@ -142,6 +166,24 @@ export const ValidationReports = __t.object("ValidationReports", {
   contentJson: __t.string(),
 });
 export type ValidationReports = __Infer<typeof ValidationReports>;
+
+export const ValidationResult = __t.object("ValidationResult", {
+  id: __t.u64(),
+  eventKey: __t.string(),
+  rootId: __t.u64(),
+  createdAtUtc: __t.timestamp(),
+  payloadJson: __t.string(),
+});
+export type ValidationResult = __Infer<typeof ValidationResult>;
+
+export const WeatherReading = __t.object("WeatherReading", {
+  id: __t.u64(),
+  eventKey: __t.string(),
+  rootId: __t.u64(),
+  createdAtUtc: __t.timestamp(),
+  payloadJson: __t.string(),
+});
+export type WeatherReading = __Infer<typeof WeatherReading>;
 
 export const WeatherRecords = __t.object("WeatherRecords", {
   provider: __t.string(),

@@ -12,7 +12,9 @@ import {
 // Execute the actual reducer bodies with deterministic clocks for expiry/retention.
 // Real transaction rollback, transport and schema are separately covered by the
 // mandatory local-server harness; this mock never claims to provide transactions.
-vi.mock('spacetimedb/server', () => ({ t: { string: () => ({}) } }));
+vi.mock('spacetimedb/server', () => ({
+  t: { string: () => ({}), u64: () => ({}) },
+}));
 vi.mock('../src/schema', () => ({
   database: { reducer: (args: unknown, body?: unknown) => body ?? args },
 }));

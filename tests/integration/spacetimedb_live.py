@@ -25,6 +25,7 @@ from shared.settings import SpacetimeSettings
 from shared.spacetimedb_adapter import SpacetimeAdapter, SpacetimeError, payload_json
 from tests.fixtures.spacetimedb import aircraft, weather
 from tests.integration.congestion_live import exercise_congestion
+from tests.integration.python_bridge_live import exercise_bridge
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -274,6 +275,16 @@ def main() -> None:
                 f"--outfile={temp / 'clients.cjs'}",
             ]
         )
+        run_tool(
+            [
+                str(ROOT / "backend/module/node_modules/.bin/esbuild"),
+                "bridge/index.ts",
+                "--bundle",
+                "--platform=node",
+                "--format=cjs",
+                f"--outfile={temp / 'bridge.cjs'}",
+            ]
+        )
         with socket.socket() as sock:
             sock.bind(("127.0.0.1", 0))
             port = sock.getsockname()[1]
@@ -307,6 +318,7 @@ def main() -> None:
                     except (OSError, URLError):
                         assert time.monotonic() < deadline, "TEST server startup timed out"
                         time.sleep(0.1)
+                asyncio.run(exercise_bridge(origin, temp))
                 asyncio.run(exercise(origin, f"watchtower-test-{uuid4().hex}", temp))
             finally:
                 server.terminate()
@@ -318,7 +330,8 @@ def main() -> None:
     print(
         "PASS: real SpacetimeDB publish, Python writes/reads, two subscriptions, "
         "authorization, rollback, snapshots, durable candidates, correction, receipt, recovery, "
-        "projection isolation and concurrent updates (TEST database; TEST weather double)."
+        "projection isolation, concurrent updates and TS/Python bridge restart recovery "
+        "(TEST database; TEST weather availability handler)."
     )
 
 

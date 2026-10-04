@@ -17,12 +17,17 @@ import PruneLiveObservationsReducer from "../prune_live_observations_reducer";
 import RecordCandidateReceiptReducer from "../record_candidate_receipt_reducer";
 import RegisterAssessmentRequestReducer from "../register_assessment_request_reducer";
 import ReportSourceFailureReducer from "../report_source_failure_reducer";
+import SeedAgentIdentityReducer from "../seed_agent_identity_reducer";
 import SetIngestionPermissionReducer from "../set_ingestion_permission_reducer";
 import SetServicePermissionReducer from "../set_service_permission_reducer";
 import StoreProjectionReducer from "../store_projection_reducer";
 import StoreValidationReportReducer from "../store_validation_report_reducer";
 import SubmitFlowCandidateReducer from "../submit_flow_candidate_reducer";
 import SubmitWeatherAssessmentReducer from "../submit_weather_assessment_reducer";
+import WriteCongestionReadingReducer from "../write_congestion_reading_reducer";
+import WriteIngestEventReducer from "../write_ingest_event_reducer";
+import WriteValidationResultReducer from "../write_validation_result_reducer";
+import WriteWeatherReadingReducer from "../write_weather_reading_reducer";
 
 export type CloseUnfinishedCasesParams = __Infer<typeof CloseUnfinishedCasesReducer>;
 export type CreateEvidenceSnapshotParams = __Infer<typeof CreateEvidenceSnapshotReducer>;
@@ -35,10 +40,15 @@ export type PruneLiveObservationsParams = __Infer<typeof PruneLiveObservationsRe
 export type RecordCandidateReceiptParams = __Infer<typeof RecordCandidateReceiptReducer>;
 export type RegisterAssessmentRequestParams = __Infer<typeof RegisterAssessmentRequestReducer>;
 export type ReportSourceFailureParams = __Infer<typeof ReportSourceFailureReducer>;
+export type SeedAgentIdentityParams = __Infer<typeof SeedAgentIdentityReducer>;
 export type SetIngestionPermissionParams = __Infer<typeof SetIngestionPermissionReducer>;
 export type SetServicePermissionParams = __Infer<typeof SetServicePermissionReducer>;
 export type StoreProjectionParams = __Infer<typeof StoreProjectionReducer>;
 export type StoreValidationReportParams = __Infer<typeof StoreValidationReportReducer>;
 export type SubmitFlowCandidateParams = __Infer<typeof SubmitFlowCandidateReducer>;
 export type SubmitWeatherAssessmentParams = __Infer<typeof SubmitWeatherAssessmentReducer>;
+export type WriteCongestionReadingParams = __Infer<typeof WriteCongestionReadingReducer>;
+export type WriteIngestEventParams = __Infer<typeof WriteIngestEventReducer>;
+export type WriteValidationResultParams = __Infer<typeof WriteValidationResultReducer>;
+export type WriteWeatherReadingParams = __Infer<typeof WriteWeatherReadingReducer>;
 

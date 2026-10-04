@@ -1,6 +1,6 @@
 {
-  "database": "watchtower-local",
-  "server": "http://127.0.0.1:3000",
+  "database": "watchtower-local-4onkk",
+  "server": "https://maincloud.spacetimedb.com",
   "module-path": "backend/module",
   "generate": [
     {

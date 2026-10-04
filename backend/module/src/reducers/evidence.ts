@@ -1,3 +1,4 @@
+import { appendIngest } from './streams';
 import { Timestamp } from 'spacetimedb';
 import { t, type InferSchema, type ReducerCtx } from 'spacetimedb/server';
 import { database } from '../schema';
@@ -163,6 +164,7 @@ export const ingest_feed_batch = database.reducer(
       }
     }
     health(ctx, input.provider, input.fetched, 'ok', input.source);
+    appendIngest(ctx, `feed:${input.batchId}`, input.value);
   },
 );
 
