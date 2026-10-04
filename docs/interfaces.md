@@ -37,6 +37,23 @@ that evidence IDs exist in storage, and uAgents serialization. Review questions:
 weather owner confirms `weather_assessment_id` semantics; validation owner confirms
 the validator can check the action/parameter names and wants no further fields.
 
+### AssessmentRequest (proposal, congestion owner)
+
+`AssessmentRequest` in shared/contracts.py is congestion's request for a weather
+assessment: a `MessageEnvelope` (sender must be congestion, snapshot and evidence
+fixed for the case), an aware-UTC window, and `attempt` (1 or 2; at most two
+specialist exchanges per case). A retry reuses the same `message_id`, so the weather
+agent can deduplicate. Replies must set `reply_to` to that `message_id`;
+agents/congestion/coordination.py accepts a reply only from the weather role for the
+same case and snapshot, answering the outstanding request, before its expiry. A timeout
+proceeds with an unknown weather signal; a late reply is rejected.
+
+Still to be defined by their owners: the weather reply (`WeatherAssessment`, plan 6.2)
+and validation's correction request. Coordination currently reads only their envelope
+fields, a reduced weather signal and an assessment ID, so neither needs congestion types.
+A correction request must set `reply_to` to the candidate's `message_id`; one correction
+per case is honored.
+
 The cycle is weather ↔ congestion → validation. Cases use fixed evidence;
 there is at most one correction and two specialist exchanges. Request retries
 are idempotent. Agents communicate through messages and shared records, never
