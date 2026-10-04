@@ -9,7 +9,7 @@ Rules (plan 6.5):
   duplicate or retried messages yield one case; a different snapshot for the same case
   id is a conflict.
 - One weather exchange per case, plus at most one more if validation asks for a single
-  correction: at most two specialist exchanges (``AssessmentRequest.MAX_ATTEMPT``).
+  correction: at most two specialist exchanges (``WeatherAssessmentRequest.MAX_ATTEMPT``).
 - A weather timeout or an insufficient reply proceeds with an UNKNOWN weather signal
   (limited quality downstream); clear weather never blocks. A later reply to a timed-out
   request is rejected, never applied.
@@ -29,9 +29,9 @@ from enum import StrEnum
 from agents.congestion.candidates import WeatherSignal
 from shared.contracts import (
     AgentName,
-    AssessmentRequest,
     FlowCandidate,
     MessageEnvelope,
+    WeatherAssessmentRequest,
 )
 
 DEFAULT_WEATHER_TIMEOUT = timedelta(seconds=15)
@@ -88,7 +88,7 @@ class CorrectionResult:
     """``request`` is the second weather request to send when a correction is accepted."""
 
     outcome: Outcome
-    request: AssessmentRequest | None = None
+    request: WeatherAssessmentRequest | None = None
     reason: str | None = None
 
 
@@ -117,7 +117,7 @@ class _Case:
     window_end: datetime
     valid_until: datetime
     state: CaseState = CaseState.AWAITING_WEATHER
-    requests: list[AssessmentRequest] = field(default_factory=list)
+    requests: list[WeatherAssessmentRequest] = field(default_factory=list)
     deadline: datetime | None = None
     exchanges: int = 0
     corrections: int = 0
@@ -154,7 +154,7 @@ class CaseCoordinator:
         now: datetime,
         window_start: datetime,
         window_end: datetime,
-    ) -> AssessmentRequest:
+    ) -> WeatherAssessmentRequest:
         """Open a case bound to a fixed snapshot, or return the existing case's request."""
         _require_utc(now)
         existing = self._cases.get(case_id)
@@ -169,7 +169,7 @@ class CaseCoordinator:
         self._cases[case_id] = case
         return request
 
-    def _new_request(self, case: _Case, now: datetime) -> AssessmentRequest:
+    def _new_request(self, case: _Case, now: datetime) -> WeatherAssessmentRequest:
         attempt = case.exchanges + 1
         envelope = MessageEnvelope(
             schema_version=MessageEnvelope.SUPPORTED_SCHEMA_VERSION,
@@ -182,7 +182,7 @@ class CaseCoordinator:
             airport_icao="KDTW",
             valid_until_utc=case.valid_until,
         )
-        request = AssessmentRequest(envelope, case.window_start, case.window_end, attempt)
+        request = WeatherAssessmentRequest(envelope, case.window_start, case.window_end, attempt)
         case.requests.append(request)
         case.exchanges = attempt
         case.state = CaseState.AWAITING_WEATHER
@@ -320,7 +320,10 @@ class CaseCoordinator:
         if envelope.reply_to != case.candidates[-1].envelope.message_id:
             return CorrectionResult(Outcome.REJECTED, reason="not_about_the_latest_candidate")
 
-        if case.corrections >= MAX_CORRECTIONS or case.exchanges >= AssessmentRequest.MAX_ATTEMPT:
+        if (
+            case.corrections >= MAX_CORRECTIONS
+            or case.exchanges >= WeatherAssessmentRequest.MAX_ATTEMPT
+        ):
             case.state = CaseState.CLOSED
             case.close_reason = CloseReason.PERSISTENT_DISAGREEMENT
             result = CorrectionResult(Outcome.REJECTED, reason="correction_limit_reached")

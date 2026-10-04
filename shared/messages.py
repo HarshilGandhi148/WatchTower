@@ -10,8 +10,11 @@ from typing import Any
 from pydantic.v1 import StrictInt, StrictStr
 from uagents import Model
 
-from shared.contracts import AgentName, MessageEnvelope
+from shared.contracts import AgentName, MessageEnvelope, WeatherAssessmentRequest
 from shared.orchestration import AssessmentRequest, CandidateReady
+
+# Weather assessment status vocabulary from plan 6.2 (WeatherAssessment.status).
+WEATHER_STATUSES = frozenset({"impact", "no_material_impact", "insufficient_data"})
 
 
 class WireModel(Model):
@@ -103,3 +106,47 @@ class CandidateReadyMessage(WireModel):
             self.assessment_round,
             self.projection_id,
         )
+
+
+class WeatherAssessmentRequestMessage(WireModel):
+    """Congestion -> weather, inside one validation round (proposal, congestion owner)."""
+
+    envelope: EnvelopeModel
+    window_start_utc: datetime
+    window_end_utc: datetime
+    attempt: StrictInt
+
+    @classmethod
+    def from_request(cls, request: WeatherAssessmentRequest) -> "WeatherAssessmentRequestMessage":
+        return cls(
+            envelope=EnvelopeModel.from_envelope(request.envelope),
+            window_start_utc=request.window_start_utc,
+            window_end_utc=request.window_end_utc,
+            attempt=request.attempt,
+        )
+
+    def to_request(self) -> WeatherAssessmentRequest:
+        return WeatherAssessmentRequest(
+            self.envelope.to_envelope(), self.window_start_utc, self.window_end_utc, self.attempt
+        )
+
+
+class WeatherAssessmentReplyMessage(WireModel):
+    """Weather -> congestion. ``reply_to`` names the request; the full WeatherAssessment
+    payload stays with the weather owner and is referenced by ``assessment_id``."""
+
+    envelope: EnvelopeModel
+    status: StrictStr
+    assessment_id: StrictStr | None = None
+
+    def to_reply(self) -> tuple[MessageEnvelope, str, str | None]:
+        envelope = self.envelope.to_envelope()
+        if envelope.sender_agent is not AgentName.WEATHER:
+            raise ValueError("A weather reply must be sent by the weather agent")
+        if envelope.reply_to is None:
+            raise ValueError("A weather reply must name the request it answers")
+        if self.status not in WEATHER_STATUSES:
+            raise ValueError("Unknown weather assessment status")
+        if self.assessment_id is not None and not self.assessment_id.strip():
+            raise ValueError("An assessment reference must not be blank")
+        return envelope, self.status, self.assessment_id

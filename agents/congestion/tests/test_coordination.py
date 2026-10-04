@@ -19,11 +19,11 @@ from agents.congestion.coordination import (
 from shared.contracts import (
     AdvisoryType,
     AgentName,
-    AssessmentRequest,
     CandidateStatus,
     EvidenceQuality,
     FlowCandidate,
     MessageEnvelope,
+    WeatherAssessmentRequest,
 )
 
 T0 = datetime(2026, 10, 4, 1, 0, tzinfo=UTC)
@@ -87,7 +87,9 @@ class Builder:
         )
 
 
-def opened(coordinator: CaseCoordinator | None = None) -> tuple[CaseCoordinator, AssessmentRequest]:
+def opened(
+    coordinator: CaseCoordinator | None = None,
+) -> tuple[CaseCoordinator, WeatherAssessmentRequest]:
     coordinator = coordinator or CaseCoordinator()
     request = coordinator.open_case(
         "case-1", "snap-1", EVIDENCE, T0, T0, T0 + timedelta(minutes=15)

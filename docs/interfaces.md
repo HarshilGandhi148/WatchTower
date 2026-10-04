@@ -39,22 +39,27 @@ that evidence IDs exist in storage, and uAgents serialization. Review questions:
 weather owner confirms `weather_assessment_id` semantics; validation owner confirms
 the validator can check the action/parameter names and wants no further fields.
 
-### AssessmentRequest (proposal, congestion owner)
+### WeatherAssessmentRequest (proposal, congestion owner)
 
-`AssessmentRequest` in shared/contracts.py is congestion's request for a weather
-assessment: a `MessageEnvelope` (sender must be congestion, snapshot and evidence
-fixed for the case), an aware-UTC window, and `attempt` (1 or 2; at most two
-specialist exchanges per case). A retry reuses the same `message_id`, so the weather
-agent can deduplicate. Replies must set `reply_to` to that `message_id`;
-agents/congestion/coordination.py accepts a reply only from the weather role for the
-same case and snapshot, answering the outstanding request, before its expiry. A timeout
-proceeds with an unknown weather signal; a late reply is rejected.
+`WeatherAssessmentRequest` in shared/contracts.py is congestion's request for a weather
+assessment within one validation round: a `MessageEnvelope` (sender must be congestion,
+snapshot and evidence fixed for the case), an aware-UTC window, and `attempt` (1 or 2,
+matching the validation `assessment_round`). It is distinct from shared/orchestration.py's
+`AssessmentRequest`, which is validation asking congestion. A retry reuses the same
+`message_id`, so the weather agent can deduplicate.
 
-Still to be defined by their owners: the weather reply (`WeatherAssessment`, plan 6.2)
-and validation's correction request. Coordination currently reads only their envelope
-fields, a reduced weather signal and an assessment ID, so neither needs congestion types.
-A correction request must set `reply_to` to the candidate's `message_id`; one correction
-per case is honored.
+On the wire (shared/messages.py) it travels as `WeatherAssessmentRequestMessage`; the
+weather agent answers with `WeatherAssessmentReplyMessage`: a weather-role envelope whose
+`reply_to` names the request, a status from plan 6.2 (impact | no_material_impact |
+insufficient_data) and the stored `assessment_id`. The full WeatherAssessment payload
+stays with the weather owner.
+
+Congestion accepts a reply only from the configured weather address, for the same case
+and snapshot, answering the outstanding request, before expiry; late replies are
+rejected. Validation's `CandidateReady` requires a stored weather assessment, so a case
+whose weather exchange times out or returns no assessment id is not submitted and
+validation closes it as insufficient data at its deadline (to be confirmed with the
+validation and weather owners; the plan also allows a limited result instead).
 
 The cycle is weather ↔ congestion → validation. Cases use fixed evidence;
 there is at most one correction and two specialist exchanges. Request retries

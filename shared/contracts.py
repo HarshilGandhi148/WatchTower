@@ -271,7 +271,7 @@ class FlowCandidate:
 
 
 @dataclass(frozen=True, slots=True)
-class AssessmentRequest:
+class WeatherAssessmentRequest:
     """Congestion's request for a weather assessment of one fixed snapshot and window.
 
     ``attempt`` is the exchange number within the case (1 or 2; plan 6.5 allows at most
@@ -290,7 +290,7 @@ class AssessmentRequest:
         if not isinstance(self.envelope, MessageEnvelope):
             raise ValueError("envelope must be a MessageEnvelope")
         if self.envelope.sender_agent is not AgentName.CONGESTION:
-            raise ValueError("AssessmentRequest must be sent by the congestion agent")
+            raise ValueError("WeatherAssessmentRequest must be sent by the congestion agent")
         for timestamp in (self.window_start_utc, self.window_end_utc):
             if not isinstance(timestamp, datetime) or timestamp.utcoffset() != timedelta(0):
                 raise ValueError("Assessment window must use aware UTC timestamps")
