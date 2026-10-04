@@ -268,3 +268,33 @@ class FlowCandidate:
                 raise ValueError("A downstream restriction needs an FAA event reference")
             if not self.affected_flight_ids:
                 raise ValueError("A downstream restriction needs reliably associated flights")
+
+
+@dataclass(frozen=True, slots=True)
+class AssessmentRequest:
+    """Congestion's request for a weather assessment of one fixed snapshot and window.
+
+    ``attempt`` is the exchange number within the case (1 or 2; plan 6.5 allows at most
+    two specialist exchanges). Retrying a request reuses the same envelope message_id,
+    so receivers can deduplicate.
+    """
+
+    MAX_ATTEMPT: ClassVar[int] = 2
+
+    envelope: MessageEnvelope
+    window_start_utc: datetime
+    window_end_utc: datetime
+    attempt: int = 1
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.envelope, MessageEnvelope):
+            raise ValueError("envelope must be a MessageEnvelope")
+        if self.envelope.sender_agent is not AgentName.CONGESTION:
+            raise ValueError("AssessmentRequest must be sent by the congestion agent")
+        for timestamp in (self.window_start_utc, self.window_end_utc):
+            if not isinstance(timestamp, datetime) or timestamp.utcoffset() != timedelta(0):
+                raise ValueError("Assessment window must use aware UTC timestamps")
+        if self.window_end_utc <= self.window_start_utc:
+            raise ValueError("Assessment window must end after it starts")
+        if type(self.attempt) is not int or not 1 <= self.attempt <= self.MAX_ATTEMPT:
+            raise ValueError(f"attempt must be an integer from 1 to {self.MAX_ATTEMPT}")
