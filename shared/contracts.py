@@ -569,3 +569,367 @@ class SourceFailure:
 
     def __post_init__(self) -> None:
         _source(self.provider, self.source_ref, self.fetched_at_utc)
+
+
+class WeatherStatus(StrEnum):
+    IMPACT = "impact"
+    NO_MATERIAL_IMPACT = "no_material_impact"
+    INSUFFICIENT_DATA = "insufficient_data"
+
+
+class WeatherBasis(StrEnum):
+    OBSERVED = "observed"
+    FORECAST = "forecast"
+    CONDITIONAL = "conditional"
+    TRANSITION = "transition"
+
+
+class VisibilityBound(StrEnum):
+    EXACT = "exact"
+    GREATER_THAN = "greater_than"
+    LESS_THAN = "less_than"
+
+
+def weather_utc(value: datetime) -> None:
+    if not isinstance(value, datetime) or value.utcoffset() != timedelta(0):
+        raise ValueError("Weather times must be aware UTC")
+
+
+def weather_window(start: datetime, end: datetime) -> None:
+    weather_utc(start)
+    weather_utc(end)
+    if end <= start:
+        raise ValueError("Weather window must end after start")
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class WeatherConditions:
+    wind_direction_deg: float | None = None
+    wind_variable: bool = False
+    wind_speed_kt: float | None = None
+    wind_gust_kt: float | None = None
+    visibility_m: float | None = None
+    visibility_bound: VisibilityBound = VisibilityBound.EXACT
+    ceiling_ft: float | None = None
+    sky_known: bool = False
+    clear_skies: bool = False
+    weather_codes: tuple[str, ...] = ()
+    weather_known: bool = False
+    temperature_c: float | None = None
+    dewpoint_c: float | None = None
+    missing_fields: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        for name, limit in (
+            ("wind_direction_deg", 360),
+            ("wind_speed_kt", 300),
+            ("wind_gust_kt", 300),
+            ("visibility_m", 200000),
+            ("ceiling_ft", 100000),
+        ):
+            _measurement(getattr(self, name), 0, limit)
+        for value in (self.temperature_c, self.dewpoint_c):
+            _measurement(value, -100, 100)
+        for value in (self.wind_variable, self.sky_known, self.clear_skies, self.weather_known):
+            if type(value) is not bool:
+                raise ValueError("Weather flags must be booleans")
+        if not isinstance(self.visibility_bound, VisibilityBound):
+            raise ValueError("Invalid visibility bound")
+        if self.wind_variable and self.wind_direction_deg is not None:
+            raise ValueError("Variable wind has no fixed direction")
+        if self.clear_skies and (not self.sky_known or self.ceiling_ft is not None):
+            raise ValueError("Clear skies require known sky and no ceiling")
+        for values in (self.weather_codes, self.missing_fields):
+            if not isinstance(values, tuple):
+                raise ValueError("Weather fields must be immutable")
+            for text in values:
+                _check_text(text, "weather field")
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class MetarEvidence:
+    evidence_id: str
+    observed_at_utc: datetime
+    fetched_at_utc: datetime
+    source_ref: str
+    raw_text: str
+    conditions: WeatherConditions
+    airport_icao: str = "KDTW"
+
+    def __post_init__(self) -> None:
+        _weather_evidence(self.evidence_id, self.source_ref, self.airport_icao, self.raw_text)
+        weather_utc(self.observed_at_utc)
+        weather_utc(self.fetched_at_utc)
+        if self.observed_at_utc > self.fetched_at_utc:
+            raise ValueError("METAR observation after fetch")
+        if not isinstance(self.conditions, WeatherConditions):
+            raise ValueError("Invalid weather conditions")
+
+
+def _weather_evidence(evidence_id: str, source: str, airport: str, raw: str) -> None:
+    _check_text(evidence_id, "evidence_id")
+    _check_text(source, "source_ref")
+    if airport != "KDTW":
+        raise ValueError("Weather supports KDTW only")
+    if not isinstance(raw, str) or len(raw) > 32768 or len(source) > 2048:
+        raise ValueError("Invalid weather source text")
+
+
+@dataclass(frozen=True, slots=True)
+class ForecastGroup:
+    start_utc: datetime
+    end_utc: datetime
+    conditions: WeatherConditions
+    change: str = "BASE"
+    probability_percent: int | None = None
+    transition_end_utc: datetime | None = None
+
+    def __post_init__(self) -> None:
+        weather_window(self.start_utc, self.end_utc)
+        if not isinstance(self.conditions, WeatherConditions):
+            raise ValueError("Invalid forecast conditions")
+        if self.change not in {"BASE", "FM", "BECMG", "TEMPO", "PROB"}:
+            raise ValueError("Unsupported forecast change")
+        if self.probability_percent is not None and (
+            type(self.probability_percent) is not int or not 0 < self.probability_percent <= 100
+        ):
+            raise ValueError("Invalid forecast probability")
+        if self.change == "PROB" and self.probability_percent is None:
+            raise ValueError("PROB requires probability")
+        if self.probability_percent is not None and self.change not in {"PROB", "TEMPO"}:
+            raise ValueError("Probability must remain in a conditional group")
+        if self.change == "BECMG":
+            if self.transition_end_utc is None:
+                raise ValueError("BECMG requires transition end")
+            weather_utc(self.transition_end_utc)
+            if not self.start_utc < self.transition_end_utc <= self.end_utc:
+                raise ValueError("Invalid BECMG transition")
+        elif self.transition_end_utc is not None:
+            raise ValueError("Only BECMG has a transition end")
+
+
+@dataclass(frozen=True, slots=True)
+class ForecastTemperature:
+    valid_at_utc: datetime
+    temperature_c: float
+    kind: str
+
+    def __post_init__(self) -> None:
+        weather_utc(self.valid_at_utc)
+        _measurement(self.temperature_c, -100, 100)
+        if self.temperature_c is None or self.kind not in {"MAX", "MIN"}:
+            raise ValueError("Invalid forecast temperature")
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class TafEvidence:
+    evidence_id: str
+    issued_at_utc: datetime
+    fetched_at_utc: datetime
+    start_utc: datetime
+    end_utc: datetime
+    source_ref: str
+    raw_text: str
+    groups: tuple[ForecastGroup, ...]
+    amendment: str = "original"
+    airport_icao: str = "KDTW"
+    temperatures: tuple[ForecastTemperature, ...] = ()
+
+    def __post_init__(self) -> None:
+        _weather_evidence(self.evidence_id, self.source_ref, self.airport_icao, self.raw_text)
+        weather_window(self.start_utc, self.end_utc)
+        weather_utc(self.issued_at_utc)
+        weather_utc(self.fetched_at_utc)
+        if self.issued_at_utc > self.fetched_at_utc:
+            raise ValueError("TAF issue after fetch")
+        if self.amendment not in {"original", "amended", "corrected"}:
+            raise ValueError("Invalid TAF amendment")
+        if not isinstance(self.groups, tuple):
+            raise ValueError("Forecast groups must be immutable")
+        for group in self.groups:
+            if not isinstance(group, ForecastGroup) or not (
+                self.start_utc <= group.start_utc < group.end_utc <= self.end_utc
+            ):
+                raise ValueError("Forecast group outside TAF validity")
+        if not isinstance(self.temperatures, tuple):
+            raise ValueError("Forecast temperatures must be immutable")
+        for temperature in self.temperatures:
+            if not isinstance(temperature, ForecastTemperature) or not (
+                self.start_utc <= temperature.valid_at_utc <= self.end_utc
+            ):
+                raise ValueError("Forecast temperature outside TAF validity")
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class WeatherSnapshot:
+    snapshot_id: str
+    cutoff_utc: datetime
+    evidence_ids: tuple[str, ...]
+    metars: tuple[MetarEvidence, ...] = ()
+    tafs: tuple[TafEvidence, ...] = ()
+    airport_icao: str = "KDTW"
+    data_mode: str = "live"
+
+    def __post_init__(self) -> None:
+        _check_text(self.snapshot_id, "snapshot_id")
+        weather_utc(self.cutoff_utc)
+        if self.airport_icao != "KDTW" or self.data_mode != "live":
+            raise ValueError("Snapshot must reference live KDTW evidence")
+        for values in (self.evidence_ids, self.metars, self.tafs):
+            if not isinstance(values, tuple):
+                raise ValueError("Snapshot collections must be immutable")
+        for value in self.evidence_ids:
+            _check_text(value, "evidence_id")
+        if len(set(self.evidence_ids)) != len(self.evidence_ids):
+            raise ValueError("Duplicate snapshot evidence IDs")
+        seen: set[str] = set()
+        for record in (*self.metars, *self.tafs):
+            if not isinstance(record, (MetarEvidence, TafEvidence)):
+                raise ValueError("Invalid weather evidence")
+            if record.evidence_id not in self.evidence_ids or record.evidence_id in seen:
+                raise ValueError("Missing or duplicate retained weather evidence")
+            if record.fetched_at_utc > self.cutoff_utc:
+                raise ValueError("Evidence fetched after snapshot cutoff")
+            seen.add(record.evidence_id)
+
+
+@dataclass(frozen=True, slots=True)
+class WeatherFact:
+    name: str
+    value: float
+    unit: str
+    evidence_id: str
+    basis: WeatherBasis
+    start_utc: datetime
+    end_utc: datetime
+    bound: VisibilityBound = VisibilityBound.EXACT
+    related_evidence_ids: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        for value in (self.name, self.unit, self.evidence_id):
+            _check_text(value, "weather fact")
+        _check_number(self.value, "weather fact value")
+        weather_window(self.start_utc, self.end_utc)
+        if not isinstance(self.basis, WeatherBasis) or not isinstance(self.bound, VisibilityBound):
+            raise ValueError("Invalid fact basis or bound")
+        _weather_references(self.related_evidence_ids)
+
+
+@dataclass(frozen=True, slots=True)
+class WeatherHazard:
+    kind: str
+    area: str
+    start_utc: datetime
+    end_utc: datetime
+    basis: WeatherBasis
+    evidence_id: str
+    probability_percent: int | None = None
+    related_evidence_ids: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if self.kind not in {
+            "wind",
+            "gusts",
+            "visibility",
+            "ceiling",
+            "thunderstorm",
+            "freezing_precipitation",
+            "snow",
+            "precipitation",
+            "wind_change",
+            "gust_change",
+            "direction_change",
+        }:
+            raise ValueError("Unsupported weather hazard")
+        if self.area != "KDTW" or not isinstance(self.basis, WeatherBasis):
+            raise ValueError("Invalid hazard area or basis")
+        _check_text(self.evidence_id, "hazard evidence")
+        weather_window(self.start_utc, self.end_utc)
+        _weather_references(self.related_evidence_ids)
+        if self.probability_percent is not None and (
+            type(self.probability_percent) is not int or not 0 < self.probability_percent <= 100
+        ):
+            raise ValueError("Invalid hazard probability")
+
+
+def _weather_references(values: tuple[str, ...]) -> None:
+    if not isinstance(values, tuple) or len(set(values)) != len(values):
+        raise ValueError("Evidence references must be an immutable unique tuple")
+    for value in values:
+        _check_text(value, "related evidence")
+
+
+@dataclass(frozen=True, slots=True)
+class WeatherImplication:
+    implication_id: str
+    text: str
+    evidence_ids: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        _check_text(self.implication_id, "implication_id")
+        _check_text(self.text, "implication text")
+        if not isinstance(self.evidence_ids, tuple) or not self.evidence_ids:
+            raise ValueError("Implications require immutable evidence references")
+        for value in self.evidence_ids:
+            _check_text(value, "implication evidence")
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class WeatherAssessment:
+    assessment_id: str
+    envelope: MessageEnvelope
+    window_start_utc: datetime
+    window_end_utc: datetime
+    status: WeatherStatus
+    quality: EvidenceQuality
+    hazards: tuple[WeatherHazard, ...]
+    weather_facts: tuple[WeatherFact, ...]
+    operational_implications: tuple[WeatherImplication, ...]
+    missing_inputs: tuple[str, ...]
+    assumptions: tuple[str, ...]
+    summary: str
+    rules_version: str
+    prompt_version: str
+
+    def __post_init__(self) -> None:
+        for value in (self.assessment_id, self.summary, self.rules_version, self.prompt_version):
+            _check_text(value, "assessment field")
+        weather_window(self.window_start_utc, self.window_end_utc)
+        if not isinstance(self.envelope, MessageEnvelope) or (
+            self.envelope.sender_agent is not AgentName.WEATHER
+        ):
+            raise ValueError("Assessment must belong to weather")
+        if not isinstance(self.status, WeatherStatus) or not isinstance(
+            self.quality, EvidenceQuality
+        ):
+            raise ValueError("Invalid weather status or quality")
+        for values in (
+            self.hazards,
+            self.weather_facts,
+            self.operational_implications,
+            self.missing_inputs,
+            self.assumptions,
+        ):
+            if not isinstance(values, tuple):
+                raise ValueError("Assessment collections must be immutable")
+        known = set(self.envelope.evidence_ids)
+        for item in (*self.hazards, *self.weather_facts):
+            if not isinstance(item, (WeatherHazard, WeatherFact)):
+                raise ValueError("Invalid weather assessment item")
+            if item.evidence_id not in known or not set(item.related_evidence_ids) <= known:
+                raise ValueError("Assessment cites unknown evidence")
+            if not self.window_start_utc <= item.start_utc < item.end_utc <= self.window_end_utc:
+                raise ValueError("Assessment item outside requested window")
+        for implication in self.operational_implications:
+            if not isinstance(implication, WeatherImplication):
+                raise ValueError("Invalid weather implication")
+            if not set(implication.evidence_ids) <= known:
+                raise ValueError("Implication cites unknown evidence")
+        if self.status is WeatherStatus.IMPACT and not self.hazards:
+            raise ValueError("Impact requires supported hazards")
+        if self.status is WeatherStatus.NO_MATERIAL_IMPACT and (
+            self.hazards or self.missing_inputs
+        ):
+            raise ValueError("Clear assessment requires complete evidence")
+        if self.status is WeatherStatus.INSUFFICIENT_DATA and not self.missing_inputs:
+            raise ValueError("Insufficient data must name missing inputs")

@@ -1,0 +1,24 @@
+[
+  {
+    "icaoId": "KDTW",
+    "issueTime": "2026-10-04T04:00:00Z",
+    "validTimeFrom": 1791086400,
+    "validTimeTo": 1791172800,
+    "rawTAF": "TEST KDTW TAF",
+    "fcsts": [
+      {
+        "timeFrom": 1791086400,
+        "timeTo": 1791172800,
+        "fcstChange": null,
+        "timeBec": null,
+        "probability": null,
+        "wdir": 270,
+        "wspd": 8,
+        "wgst": null,
+        "visib": "6+",
+        "wxString": null,
+        "clouds": [{"cover": "SCT", "base": 5000}]
+      }
+    ]
+  }
+]

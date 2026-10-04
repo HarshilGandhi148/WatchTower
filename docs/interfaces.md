@@ -1,5 +1,13 @@
 # Integration contracts
 
+## Weather component handoff
+
+The additive [weather interface proposal](weather-interface-proposal.md) defines
+retained METAR/TAF evidence, fixed snapshots and typed WeatherAssessment results.
+The weather component is implemented against injected loading/persistence/case
+callbacks; shared review and live database/runtime wiring remain pending.
+Existing WeatherRecord and weather request/reply wire shapes are preserved.
+
 full_technical_plan.md is the product authority. This document identifies
 stable boundaries so the four workstreams can proceed independently.
 
@@ -16,8 +24,10 @@ serialization, and real SpacetimeDB tests verify this compatibility boundary.
 
 shared/contracts.py defines the domain envelope and bounded enum catalog.
 shared/messages.py implements SDK wire serialization and shared/orchestration.py
-defines coordination references. FlowCandidate and ValidatedAdvisory payload
-DTOs are proposed below; the WeatherAssessment payload remains pending.
+defines coordination references. FlowCandidate, ValidatedAdvisory and
+WeatherAssessment payload DTOs are implemented. Shared weather review and live
+weather persistence remain pending; the existing validation and congestion
+handoffs below retain their separate verification boundaries.
 Messages carry schema_version, message_id, case_id, sender_agent, created_at_utc,
 snapshot_id, evidence_ids, airport_icao, valid_until_utc, and optional correlation_id
 and reply_to. UTC-aware timestamps and KDTW are checked by the initial envelope.
