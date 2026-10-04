@@ -1,0 +1,31 @@
+{
+  "scheduled_arrivals": [
+    {
+      "fa_flight_id": "TEST-ARR-ESTIMATED",
+      "ident": "TST201",
+      "origin": {"code_icao": "KORD"},
+      "destination": {"code_icao": "KDTW"},
+      "cancelled": false,
+      "diverted": false,
+      "scheduled_on": "2026-10-04T16:04:00Z",
+      "estimated_on": "2026-10-04T16:09:00Z",
+      "actual_on": null,
+      "scheduled_in": "2026-10-04T16:12:00Z",
+      "actual_in": null
+    },
+    {
+      "fa_flight_id": "TEST-ARR-DIVERTED",
+      "ident": "TST202",
+      "origin": {"code_icao": "KATL"},
+      "destination": {"code_icao": "KDTW"},
+      "cancelled": false,
+      "diverted": true,
+      "scheduled_on": "2026-10-04T16:03:00Z",
+      "estimated_on": "2026-10-04T16:03:00Z"
+    }
+  ],
+  "links": {
+    "next": "/airports/KDTW/flights/scheduled_arrivals?start=2026-10-04T15%3A00%3A00Z&cursor=TESTCURSOR123"
+  },
+  "num_pages": 1
+}

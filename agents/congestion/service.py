@@ -26,6 +26,8 @@ from agents.congestion.candidates import (
     ReviewThresholds,
     WeatherSignal,
     build_candidate,
+    flow_snapshot_from_demand,
+    project,
 )
 from agents.congestion.coordination import (
     CaseCoordinator,
@@ -34,7 +36,16 @@ from agents.congestion.coordination import (
     ReplyResult,
 )
 from agents.congestion.feeds import FeedSnapshot
-from agents.congestion.metrics import NearbyTraffic, demand_windows, nearby_traffic
+from agents.congestion.metrics import (
+    DemandWindows,
+    DepartureBacklog,
+    NearbyTraffic,
+    demand_windows,
+    departure_backlog,
+    nearby_traffic,
+)
+from projection.aggregate_flow import ProjectionComparison, ProjectionStatus
+from projection.assumptions import ProjectionAssumptions, ResponseParameters
 from shared.contracts import (
     AgentName,
     FlowCandidate,
@@ -83,8 +94,13 @@ class CongestionService:
         *,
         horizon_minutes: int = 15,
         thresholds: ReviewThresholds | None = None,
+        projection: ProjectionAssumptions | None = None,
     ) -> None:
+        """``projection`` (with an operator-configured capacity) enables projections."""
+        if projection is not None and projection.horizon_minutes != horizon_minutes:
+            raise ValueError("projection horizon must match the service horizon")
         self._coordinator = coordinator or CaseCoordinator()
+        self._projection = projection
         self._horizon = horizon_minutes
         self._thresholds = thresholds or ReviewThresholds()
         self._cases: dict[str, _Case] = {}
@@ -128,6 +144,32 @@ class CongestionService:
             demand=feeds.demand_evidence_id,
         )
         evidence = feeds.evidence_ids
+        nearby = nearby_traffic(feeds.adsb, now)
+        backlog = departure_backlog(feeds.flights, feeds.flights_fetched_at_utc, now)
+        demand = demand_windows(
+            feeds.flights,
+            feeds.flights_fetched_at_utc,
+            now,
+            self._horizon,
+            exclude_flight_ids=backlog.flight_ids,
+        )
+        if demand.windows is not None:
+            demand = replace(demand, assumptions=demand.assumptions + backlog.assumptions)
+        comparison = self._project(snapshot_id, now, demand, backlog)
+        # Placeholder evidence ids until records are stored through the DB adapter.
+        traffic_id = f"adsb-{stamp}" if feeds.adsb is not None else None
+        demand_id = f"flights-{stamp}" if demand.windows is not None else None
+        computed = comparison is not None and comparison.status is ProjectionStatus.COMPUTED
+        events = feeds.faa.events_for_airport("KDTW") if feeds.faa is not None else ()
+        refs = EvidenceRefs(
+            traffic=traffic_id,
+            demand=demand_id,
+            projection_id=f"proj-{stamp}" if computed else None,
+            faa_events=tuple((e.event_key, f"faa-{e.event_key}") for e in events),
+        )
+        evidence = tuple(
+            x for x in (traffic_id, demand_id, *(eid for _, eid in refs.faa_events)) if x
+        )
         opening = MessageEnvelope(
             schema_version=MessageEnvelope.SUPPORTED_SCHEMA_VERSION,
             message_id=f"{case_id}:open",
@@ -160,6 +202,7 @@ class CongestionService:
                     weather_assessment_id=assessment_id,
                     previous_nearby=previous,
                     faa=feeds.faa,
+                    comparison=comparison,
                     thresholds=thresholds,
                 )
             )
@@ -169,6 +212,29 @@ class CongestionService:
         )
         self._previous_nearby = nearby
         return opening
+
+    def _project(
+        self,
+        snapshot_id: str,
+        now: datetime,
+        demand: DemandWindows,
+        backlog: DepartureBacklog,
+    ) -> ProjectionComparison | None:
+        """Baseline vs releasing at the modeled capacity rate; None when not configured."""
+        assumptions = self._projection
+        if assumptions is None or assumptions.capacity is None:
+            return None
+        rate = assumptions.capacity.effective_capacity_per_hour
+        if rate < assumptions.bounds.min_release_cap_per_hour:
+            return None  # no allowable release-rate proposal at this capacity
+        snapshot = flow_snapshot_from_demand(
+            snapshot_id,
+            now,
+            demand,
+            backlog.upstream_waiting,
+            backlog.runway_queue,
+        )
+        return project(snapshot, assumptions, ResponseParameters(rate, 0, self._horizon))
 
     # -- 2. validation asks for an assessment ----------------------------------------
 

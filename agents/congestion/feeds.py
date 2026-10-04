@@ -11,6 +11,61 @@ from data.faa_status import EventType, FaaEvent, FaaStatusSnapshot
 from data.flightaware import Association, DemandRecord, FlightDirection, TimeKind
 from shared.persistence import utc
 from shared.settings import AirportConfig
+"""Interim live input for the congestion agent: public feeds plus optional AeroAPI.
+
+Interim because the planned path is provider ingestion -> SpacetimeDB -> agent snapshot
+reads (data/ingestion.py, shared/spacetimedb_adapter.py). Replace ``fetch_feeds`` with a
+snapshot read once that path carries these records; the rest of the agent is unaffected.
+
+Each feed fails independently to ``None`` with a recorded error: a failed feed is
+unknown, never an empty one. AeroAPI is only called when configured, through a budget
+and rate guard, and its result is cached so polling stays within the agreed spend.
+"""
+
+from __future__ import annotations
+
+import json
+import urllib.request
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
+
+from data.adsb import AdsbParseError, AdsbSnapshot, parse_point_response, point_url
+from data.faa_status import FaaParseError, FaaStatusSnapshot, parse_status_xml
+from data.flightaware import (
+    AeroApiBudget,
+    AeroApiConfig,
+    AeroApiParseError,
+    DemandRecord,
+    Endpoint,
+    build_request,
+    parse_flights,
+)
+
+TIMEOUT_S = 10
+MAX_RESPONSE_BYTES = 5_000_000
+AEROAPI_REFRESH = timedelta(minutes=5)  # plan section 10: schedule freshness budget 5 min
+# Query windows per endpoint. Departures filter on scheduled_off, so look back 2 hours (the
+# endpoint default) to keep delayed and taxiing flights for the backlog. Arrivals filter on
+# estimated_on; past estimates fall outside every demand window, so start at now (fewer
+# billed records, less chance of a truncated page).
+AEROAPI_LOOKBACK = {
+    Endpoint.SCHEDULED_DEPARTURES: timedelta(hours=2),
+    Endpoint.SCHEDULED_ARRIVALS: timedelta(0),
+}
+AEROAPI_LOOKAHEAD = timedelta(minutes=60)
+
+HttpGet = Callable[[str, str], bytes]  # (url, user_agent) -> body
+HeaderGet = Callable[[str, Mapping[str, str]], bytes]  # (url, headers) -> body
+
+
+@dataclass(frozen=True, slots=True)
+class FeedConfig:
+    adsb_base_url: str
+    faa_url: str
+    user_agent: str
+    center: tuple[float, float]
+    radius_nm: int = 40
 
 
 @dataclass(frozen=True, slots=True)
