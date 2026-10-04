@@ -10,6 +10,15 @@ import {
   type Infer as __Infer,
 } from "spacetimedb";
 
+export const AgentFindings = __t.object("AgentFindings", {
+  findingId: __t.string(),
+  snapshotId: __t.string(),
+  caseRound: __t.string(),
+  expiresAtUtc: __t.timestamp(),
+  contentJson: __t.string(),
+});
+export type AgentFindings = __Infer<typeof AgentFindings>;
+
 export const AircraftObservations = __t.object("AircraftObservations", {
   aircraftId: __t.string(),
   provider: __t.string(),
@@ -26,6 +35,87 @@ export const AircraftObservations = __t.object("AircraftObservations", {
   contentJson: __t.string(),
 });
 export type AircraftObservations = __Infer<typeof AircraftObservations>;
+
+export const AirportEvents = __t.object("AirportEvents", {
+  eventId: __t.string(),
+  batchId: __t.string(),
+  airportIcao: __t.string(),
+  contentJson: __t.string(),
+});
+export type AirportEvents = __Infer<typeof AirportEvents>;
+
+export const AssessmentRequests = __t.object("AssessmentRequests", {
+  caseRound: __t.string(),
+  snapshotId: __t.string(),
+  contentJson: __t.string(),
+});
+export type AssessmentRequests = __Infer<typeof AssessmentRequests>;
+
+export const EvidenceRecords = __t.object("EvidenceRecords", {
+  evidenceId: __t.string(),
+  provider: __t.string(),
+  contentJson: __t.string(),
+});
+export type EvidenceRecords = __Infer<typeof EvidenceRecords>;
+
+export const EvidenceSnapshots = __t.object("EvidenceSnapshots", {
+  snapshotId: __t.string(),
+  caseId: __t.string(),
+  airportIcao: __t.string(),
+  cutoffAtUtc: __t.timestamp(),
+  expiresAtUtc: __t.timestamp(),
+  requestJson: __t.string(),
+  contentJson: __t.string(),
+  closed: __t.bool(),
+});
+export type EvidenceSnapshots = __Infer<typeof EvidenceSnapshots>;
+
+export const FeedBatches = __t.object("FeedBatches", {
+  batchId: __t.string(),
+  provider: __t.string(),
+  fetchedAtUtc: __t.timestamp(),
+  sourceAtUtc: __t.option(__t.timestamp()),
+  payloadJson: __t.string(),
+});
+export type FeedBatches = __Infer<typeof FeedBatches>;
+
+export const FlightRecords = __t.object("FlightRecords", {
+  batchId: __t.string(),
+  fetchedAtUtc: __t.timestamp(),
+  contentJson: __t.string(),
+});
+export type FlightRecords = __Infer<typeof FlightRecords>;
+
+export const FlowCandidates = __t.object("FlowCandidates", {
+  candidateId: __t.string(),
+  snapshotId: __t.string(),
+  caseRound: __t.string(),
+  expiresAtUtc: __t.timestamp(),
+  contentJson: __t.string(),
+});
+export type FlowCandidates = __Infer<typeof FlowCandidates>;
+
+export const LatestFeeds = __t.object("LatestFeeds", {
+  provider: __t.string(),
+  batchId: __t.string(),
+});
+export type LatestFeeds = __Infer<typeof LatestFeeds>;
+
+export const PendingDeliveries = __t.object("PendingDeliveries", {
+  candidateId: __t.string(),
+  expiresAtUtc: __t.timestamp(),
+  contentJson: __t.string(),
+  status: __t.string(),
+  updatedAtUtc: __t.timestamp(),
+});
+export type PendingDeliveries = __Infer<typeof PendingDeliveries>;
+
+export const ProjectionResults = __t.object("ProjectionResults", {
+  projectionId: __t.string(),
+  snapshotId: __t.string(),
+  contentJson: __t.string(),
+});
+export type ProjectionResults = __Infer<typeof ProjectionResults>;
 
 export const ServicePermissions = __t.object("ServicePermissions", {
   identity: __t.identity(),

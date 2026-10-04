@@ -1,12 +1,15 @@
-# SpacetimeDB observation foundation
+# SpacetimeDB observations and congestion persistence
 
 Implemented: latest KDTW METAR, latest ADSB.lol nearby aircraft, source health,
 private service permissions, ingestion authorization and atomic writes. The
 publishing identity is administrator; it can grant/revoke ingestion but cannot
 write observations itself. Browser identities receive no write permission.
 
-Evidence, findings, projections, airport events, flight schedules, advisories and
-controller decisions remain pending. This module is not the operational release.
+Implemented additionally: normalized ADS-B/FAA batches, airport events, optional
+normalized flight records, immutable snapshots/evidence, assessment rounds, weather
+findings, candidates with atomic pending deliveries, projections and receipt/expiry
+reducers. Service grants are distinct for ingestion, weather, congestion and validation.
+Advisory publication and controller decisions remain pending. This module is not the operational release.
 The shared interface proposal and payload fields are in docs/interfaces.md.
 
 ## Compatibility and generation provenance
@@ -29,7 +32,8 @@ temporary directory and compares every generated file with the committed copy.
 `npm run check` runs lint, formatting, typechecking and pure reducer-rule tests.
 `make check-spacetime` at the repository root builds/publishes the actual module
 and verifies authorization, private-table visibility, idempotency, stale writes,
-transaction rollback and concurrent updates through HTTP and two SDK clients.
+transaction rollback, frozen evidence, candidate/outbox recovery, corrections and
+projection isolation through HTTP and two SDK clients. Weather is a TEST double.
 This test requires CLI/server 2.10.2 and fails instead of skipping missing tools.
 
 The ingestion identity is the trust boundary for provider provenance. Schema
