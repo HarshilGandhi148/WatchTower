@@ -1,0 +1,20 @@
+# Install with: pre-commit install (after creating your own checkout).
+repos:
+  - repo: local
+    hooks:
+      - id: repository-policy
+        name: Ownership and runtime import policy
+        entry: python3 scripts/check_repository.py
+        language: system
+        pass_filenames: false
+        always_run: true
+      - id: ruff
+        name: Python lint
+        entry: ruff check
+        language: system
+        types: [python]
+      - id: ruff-format
+        name: Python format
+        entry: ruff format --check
+        language: system
+        types: [python]

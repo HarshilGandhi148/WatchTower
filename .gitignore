@@ -1,0 +1,33 @@
+# Credentials and local service identities
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+spacetime.local.json
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# JavaScript and generated output
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+playwright-report/
+test-results/
+
+# Local tooling
+.cache/
+.DS_Store
+.idea/
+*.log

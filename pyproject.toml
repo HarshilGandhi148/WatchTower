@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "watchtower"
+version = "0.1.0"
+description = "DTW advisory prototype: three agents and a controller dashboard"
+requires-python = ">=3.12,<3.14"
+# Runtime dependencies are added after the uAgents/host compatibility smoke test.
+dependencies = []
+
+[tool.setuptools.packages.find]
+include = ["agents*", "data*", "projection*", "shared*", "runtime*"]
+exclude = ["*.tests", "*.tests.*", "tests*", "scripts*"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+extend-exclude = ["frontend", "backend", ".cache"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+files = ["agents", "data", "projection", "shared", "runtime", "scripts"]
+exclude = ["(^|/)tests/"]

@@ -1,0 +1,59 @@
+# Integration contracts
+
+full_technical_plan.md is the product authority. This document identifies
+stable boundaries so the four workstreams can proceed independently.
+
+## Agent messages
+
+shared/contracts.py defines the initial envelope and bounded enum catalog only;
+payload DTOs and uAgents Model serialization are still pending implementation.
+Messages carry schema_version, message_id, case_id, sender_agent, created_at_utc,
+snapshot_id, evidence_ids, airport_icao, valid_until_utc, and optional correlation_id
+and reply_to. UTC-aware timestamps and KDTW are checked by the initial envelope.
+
+Implement WeatherAssessment, FlowCandidate, and ValidatedAdvisory against plan
+section 6 with a reviewed shared contract PR. Add serialization compatibility
+tests. Envelopes validate structure; runtime also verifies the actual configured
+sender address and case/snapshot references. An enum is not authentication.
+
+The cycle is weather ↔ congestion → validation. Cases use fixed evidence;
+there is at most one correction and two specialist exchanges. Request retries
+are idempotent. Agents communicate through messages and shared records, never
+by importing each other's implementation.
+
+## Data and projections
+
+Adapters preserve provider time, successful fetch time, source ID, units,
+missing fields, and observed/forecast/conditional distinctions. All writes go
+through the shared HTTP adapter into authorized reducers.
+
+The congestion owner implements projection/aggregate_flow.py as deterministic
+functions with explicit snapshots and assumptions. Validation can call those
+functions. Projection code may not import the DB adapter, provider adapters, or
+agents. Projections have their own storage/reducers; neither preview nor decision
+writes observed coordinates/weather/demand.
+
+Readiness/capacity assumptions stay explicit. Baseline and proposal use identical
+snapshot/model/demand; only declared response parameters change. Missing live
+demand gives unavailable departure metrics, not invented flights.
+
+## SpacetimeDB and frontend
+
+The backend owner adds the 13 tables and 12 reducer names from plan section 9
+under backend/module/src/tables/ and reducers/. Every reducer checks the caller
+and relevant version; browser button state is not authorization.
+
+Controller decisions atomically check assignment, current version, expiry,
+material evidence changes, existing decisions, and request idempotency.
+Edits create a new draft/version that must be revalidated. Agents never approve.
+
+Pin a tested 2.x CLI/module/client/host combination when access is available.
+Publish only after reducer tests pass. Generate and commit TypeScript bindings
+under frontend/src/module_bindings/ with the schema PR. Record the exact CLI
+version and generation command in backend/module/README.md.
+
+Frontend receives observations, advisory versions, projections, health, and
+decision history through official SDK subscriptions. Disconnect disables decisions;
+reconnect reloads current versions. Browser environment exposes only WS URL,
+database name, and display timezone. Controller auth belongs to per-session
+identity flow; no shared service token is shipped to the browser.

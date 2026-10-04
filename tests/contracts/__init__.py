@@ -1,0 +1,1 @@
+"""Contract compatibility and invariants."""

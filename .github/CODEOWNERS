@@ -1,0 +1,25 @@
+# OWNERSHIP TEMPLATE: intentionally no active owners until assigned.
+# Replace TODO values with real usernames and uncomment the lines.
+# Last matching pattern wins. Shared lines list eligible reviewers, not an
+# enforcement rule requiring every listed person to approve.
+#
+# * @TODO_VALIDATION_OWNER
+# /agents/weather/ @TODO_WEATHER_OWNER
+# /agents/congestion/ @TODO_CONGESTION_OWNER
+# /agents/validation/ @TODO_VALIDATION_OWNER
+# /data/awc.py @TODO_WEATHER_OWNER
+# /data/adsb.py @TODO_CONGESTION_OWNER
+# /data/faa_status.py @TODO_CONGESTION_OWNER
+# /data/flightaware.py @TODO_CONGESTION_OWNER
+# /projection/ @TODO_CONGESTION_OWNER @TODO_VALIDATION_OWNER
+# /backend/ @TODO_VALIDATION_OWNER
+# /runtime/ @TODO_VALIDATION_OWNER
+# /frontend/ @TODO_FRONTEND_OWNER
+# /frontend/src/module_bindings/ @TODO_FRONTEND_OWNER @TODO_VALIDATION_OWNER
+# /shared/contracts.py @TODO_WEATHER_OWNER @TODO_CONGESTION_OWNER @TODO_VALIDATION_OWNER
+# /tests/contracts/ @TODO_WEATHER_OWNER @TODO_CONGESTION_OWNER @TODO_VALIDATION_OWNER
+# /tests/integration/ @TODO_WEATHER_OWNER @TODO_CONGESTION_OWNER @TODO_VALIDATION_OWNER
+# /tests/decisions/ @TODO_VALIDATION_OWNER @TODO_FRONTEND_OWNER
+# /tests/e2e/ @TODO_VALIDATION_OWNER @TODO_FRONTEND_OWNER
+# /docs/interfaces.md @TODO_WEATHER_OWNER @TODO_CONGESTION_OWNER @TODO_VALIDATION_OWNER @TODO_FRONTEND_OWNER
+# /.github/ @TODO_VALIDATION_OWNER @TODO_FRONTEND_OWNER

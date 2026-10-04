@@ -1,0 +1,4 @@
+# Exact development tool versions; runtime requirements go in pyproject.toml.
+ruff==0.16.9
+mypy==2.3.1
+pre-commit==4.6.2

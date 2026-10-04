@@ -1,0 +1,33 @@
+:root {
+  font-family: system-ui, sans-serif;
+  color: #edf2f7;
+  background: #111827;
+  font-synthesis: none;
+}
+
+body {
+  margin: 0;
+}
+
+.dashboard {
+  max-width: 64rem;
+  margin: 0 auto;
+  padding: 3rem 1.5rem;
+}
+
+.eyebrow {
+  color: #b8c7dc;
+  letter-spacing: 0.08em;
+}
+
+section {
+  margin-top: 2rem;
+  padding: 1.5rem;
+  border: 1px solid #6b7280;
+  border-radius: 0.75rem;
+}
+
+:focus-visible {
+  outline: 3px solid #93c5fd;
+  outline-offset: 3px;
+}
