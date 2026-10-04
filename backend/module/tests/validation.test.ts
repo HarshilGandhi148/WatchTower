@@ -42,6 +42,69 @@ const aircraft = {
 const batch = { ...envelope, provider: 'adsb_lol', observations: [aircraft] };
 
 describe('observation validation', () => {
+  it('accepts optional retained weather and rejects mismatched or future source evidence', () => {
+    const full = {
+      ...weather,
+      metar_evidence: {
+        evidence_id: 'TEST-metar',
+        airport_icao: 'KDTW',
+        observed_at_utc: observed,
+        fetched_at_utc: observed,
+        source_ref: weather.source_ref,
+        raw_text: 'TEST METAR',
+        conditions: {
+          wind_direction_deg: null,
+          wind_speed_kt: null,
+          wind_gust_kt: null,
+          visibility_m: null,
+          visibility_bound: 'exact',
+          ceiling_ft: null,
+        },
+      },
+      taf_evidence: [],
+    };
+    expect(
+      parseWeather(JSON.stringify(full), now).retained?.metar_evidence,
+    ).toEqual(full.metar_evidence);
+    for (const change of [
+      { airport_icao: 'KJFK' },
+      { source_ref: 'https://wrong.example' },
+      { fetched_at_utc: '2026-10-04T00:00:01.000Z' },
+      { conditions: { ...full.metar_evidence.conditions, wind_speed_kt: 20 } },
+    ])
+      expect(() =>
+        parseWeather(
+          JSON.stringify({
+            ...full,
+            metar_evidence: { ...full.metar_evidence, ...change },
+          }),
+          now,
+        ),
+      ).toThrow();
+    expect(() =>
+      parseWeather(
+        JSON.stringify({
+          ...full,
+          taf_evidence: [
+            {
+              evidence_id: 'TEST-taf',
+              airport_icao: 'KDTW',
+              issued_at_utc: observed,
+              fetched_at_utc: '2026-10-04T00:00:01.000Z',
+              source_ref: weather.source_ref,
+              raw_text: 'TEST TAF',
+              start_utc: observed,
+              end_utc: '2026-10-05T00:00:00.000Z',
+              groups: [],
+              amendment: 'original',
+              temperatures: [],
+            },
+          ],
+        }),
+        now,
+      ),
+    ).toThrow();
+  });
   it('preserves unknowns and zero measurements independently', () => {
     expect(
       parseWeather(JSON.stringify(weather), now).fields.windSpeedKt,

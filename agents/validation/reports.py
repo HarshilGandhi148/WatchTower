@@ -1,16 +1,113 @@
 """Evidence checks and conservative review suggestions, persisted before display."""
 
 import json
+from dataclasses import replace
 from datetime import datetime, timedelta
 from typing import Any
 
 from agents.validation.storage import ValidationStorage
+from agents.validation.demo import aircraft_recommendations
 from data.evidence_inputs import stored_feeds
 from data.traffic_metrics import demand_windows, nearby_traffic
 from shared.contracts import ActionType, FlowCandidate
 from shared.orchestration import CandidateReady, ValidationVerdict
 from shared.persistence import storage_json, utc
 from shared.validation_report import ReportOutcome, ValidationCheck, ValidationReport
+from shared.weather_evidence import metar_from_dict
+
+
+def weather_context(rows: list[dict[str, Any]], cutoff: datetime) -> str:
+    fresh = [
+        r
+        for r in rows
+        if timedelta(0) <= cutoff - utc(r["observed_at_utc"]) <= timedelta(minutes=90)
+    ]
+    if not fresh:
+        return "Current KDTW weather is unavailable."
+    row = max(fresh, key=lambda r: utc(r["observed_at_utc"]))
+    if "content_json" not in row:
+        return "KDTW weather measurements were not retained in this snapshot."
+    retained = json.loads(row["content_json"])
+    scalar = json.loads(retained[1])
+    c = metar_from_dict(retained[2]["metar_evidence"]).conditions if len(retained) == 3 else None
+    parts = []
+    speed = scalar.get("windSpeedKt")
+    direction = scalar.get("windDirectionDeg")
+    gust = scalar.get("windGustKt")
+    if speed is not None:
+        wind = (
+            f"wind {direction:g}° at {speed:g} kt"
+            if direction is not None
+            else f"wind {speed:g} kt"
+        )
+        if gust is not None:
+            wind += f", gusting {gust:g} kt"
+        parts.append(wind)
+    visibility = c.visibility_m if c else scalar.get("visibilityM")
+    if visibility is not None:
+        bound = (
+            {"exact": "", "greater_than": ">", "less_than": "<"}[c.visibility_bound.value]
+            if c
+            else ""
+        )
+        parts.append(f"visibility {bound}{visibility / 1000:g} km")
+    ceiling = scalar.get("ceilingFt")
+    if ceiling is not None:
+        parts.append(f"ceiling {ceiling:g} ft")
+    elif c and c.sky_known:
+        parts.append("no reported ceiling")
+    if c and c.weather_codes:
+        parts.append("weather " + ", ".join(c.weather_codes))
+    return (
+        "KDTW: " + "; ".join(parts) + "." if parts else "KDTW weather measurements are incomplete."
+    )
+
+
+def missing_context(values: tuple[str, ...]) -> str:
+    labels = {
+        "fresh_METAR": "a fresh KDTW METAR",
+        "TAF_window_coverage": "TAF coverage for the analysis window",
+        "historical_window_coverage": "weather coverage before the snapshot",
+        "conditional_or_transition_uncertainty": "uncertain forecast changes",
+        "normalized_METAR_only": "full decoded METAR details",
+        "weather_codes": "weather codes",
+        "sky": "cloud details",
+    }
+    return "; ".join(
+        dict.fromkeys(
+            labels.get(v, labels.get(v.split(":")[-1], v.replace("_", " "))) for v in values
+        )
+    )
+
+
+def recommendation_action(
+    weather_status: str,
+    *,
+    traffic_available: bool,
+    weather_available: bool,
+    gaps: tuple[str, ...],
+) -> str:
+    """Give a useful next step even when optional inputs cannot be checked."""
+    if not traffic_available and not weather_available:
+        return "Refresh KDTW weather and aircraft updates, then reassess this window."
+    if not weather_available:
+        return "Monitor nearby aircraft and refresh KDTW weather for this window."
+    traffic_action = (
+        "monitor nearby aircraft"
+        if traffic_available
+        else "restore aircraft updates to assess traffic pressure"
+    )
+    if weather_status == "impact":
+        return f"Review weather-related flow pressure in this window and {traffic_action}."
+    if weather_status == "no_material_impact":
+        return (
+            f"Continue weather monitoring and {traffic_action}; "
+            "no material weather impact is identified for this window."
+        )
+    return (
+        f"Review the available KDTW weather and {traffic_action}; "
+        f"refresh {missing_context(gaps) if gaps else 'full weather coverage for this window'}."
+    )
 
 
 def evaluate(
@@ -69,7 +166,7 @@ def evaluate(
     feeds = stored_feeds(snapshot)
     traffic = nearby_traffic(
         feeds.adsb,
-        candidate.window_start_utc,
+        feeds.cutoff_at_utc or candidate.window_start_utc,
         center=(feeds.configuration.latitude_deg, feeds.configuration.longitude_deg),
         radius_nm=feeds.configuration.radius_nm,
     )
@@ -79,14 +176,15 @@ def evaluate(
         feeds.demand_fetched_at_utc,
         candidate.window_start_utc,
         int((candidate.window_end_utc - candidate.window_start_utc).total_seconds() / 60),
+        evidence_time_utc=feeds.cutoff_at_utc,
     )
     expected.update({m.name: m for m in demand.metrics(feeds.demand_evidence_id or "unavailable")})
     mismatched = False
-    unsupported = False
+    unsupported: list[str] = []
     for metric in candidate.traffic_metrics:
         match = expected.get(metric.name)
         if match is None:
-            unsupported = True
+            unsupported.append(metric.name)
         elif metric != match:
             mismatched = True
     checks.append(
@@ -106,7 +204,7 @@ def evaluate(
         row.get("airport_icao", e.airport_icao) == e.airport_icao
         and row.get("evidence_id", f"{e.snapshot_id}:weather:{row['provider']}") in weather_ids
         and timedelta(0)
-        <= candidate.window_start_utc - utc(row["observed_at_utc"])
+        <= (feeds.cutoff_at_utc or candidate.window_start_utc) - utc(row["observed_at_utc"])
         <= timedelta(minutes=90)
         for row in snapshot["weather"]
     )
@@ -158,14 +256,34 @@ def evaluate(
     outcome: ReportOutcome = (
         "rejected" if rejected else "supported" if supported else "insufficient_data"
     )
-    suggestion = (
-        "Review the observed traffic and weather for this flow window; "
-        "coordinate any response with the controller."
-        if supported
-        else "Do not use this candidate: resolve inconsistent evidence and reassess."
-        if rejected
-        else "Obtain the missing or verifiable inputs before considering a flow response."
+    traffic_text = (
+        f"{traffic.total} nearby aircraft within {traffic.radius_nm:g} NM "
+        f"({traffic.airborne} airborne, {traffic.on_ground} on ground)."
+        if traffic.total is not None
+        else "Nearby traffic is unknown: " + "; ".join(traffic.notes) + "."
     )
+    weather_text = weather_context(
+        snapshot["weather"], feeds.cutoff_at_utc or candidate.window_start_utc
+    )
+    gaps = tuple(finding.get("missing_inputs", ()))
+    if (
+        rejected
+        or not fresh
+        or not conservative
+        or (candidate.projection_id and not projection_verified)
+    ):
+        action = "Reassess this candidate: " + "; ".join(
+            c.reason.rstrip(".") for c in checks if c.status == "fail"
+        )
+        action += "."
+    else:
+        action = recommendation_action(
+            finding["status"],
+            traffic_available=traffic.total is not None,
+            weather_available=weather_available,
+            gaps=gaps,
+        )
+    suggestion = f"{action} {traffic_text} {weather_text}"[:2048]
     return ValidationReport(
         f"report:{e.message_id}",
         e.message_id,
@@ -181,7 +299,14 @@ def evaluate(
             dict.fromkeys(
                 (
                     *candidate.required_missing_inputs,
+                    *gaps,
+                    *finding.get("assumptions", ()),
                     *candidate.assumptions,
+                    *(
+                        ("Supplemental traffic metrics not used: " + ", ".join(unsupported),)
+                        if unsupported
+                        else ()
+                    ),
                     "Informational prototype check; not an operational approval.",
                 )
             )
@@ -192,6 +317,8 @@ def evaluate(
 class ReportValidator:
     def __init__(self, storage: ValidationStorage) -> None:
         self.storage = storage
+        self._demo_cases: dict[str, bool] = {}
+        self._demo_count = 0
 
     async def report(self, ready: CandidateReady, now: datetime) -> dict[str, Any]:
         adapter = self.storage.adapter
@@ -212,6 +339,35 @@ class ReportValidator:
             now,
             projection_verified=bool(candidate.projection_id),
         )
+        if report.case_id not in self._demo_cases:
+            self._demo_cases[report.case_id] = self._demo_count % 2 == 0
+            self._demo_count += 1
+            if len(self._demo_cases) > 256:
+                self._demo_cases.pop(next(iter(self._demo_cases)))
+        eligible = (
+            not any(
+                c.status == "fail"
+                for c in report.checks
+                if c.name in ("binding", "freshness", "action", "projection")
+            )
+            and report.outcome != "rejected"
+        )
+        plans = (
+            aircraft_recommendations(stored_feeds(snapshot))
+            if eligible and self._demo_cases[report.case_id]
+            else ()
+        )
+        if plans:
+            report = replace(
+                report,
+                recommendation_kind="demo",
+                aircraft_recommendations=plans,
+                suggestion=(plans[0].recommendation + " " + report.suggestion)[:2048],
+                limitations=(
+                    *report.limitations,
+                    "Demo projections assume current speed and heading continue for two minutes.",
+                ),
+            )
         await adapter.call("store_validation_report", report)
         return dict(json.loads(storage_json(report)))
 

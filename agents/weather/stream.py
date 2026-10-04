@@ -9,7 +9,7 @@ from watchtower_client import Client
 
 def assess(payload: dict[str, Any], now: datetime) -> dict[str, Any]:
     reading = payload.get("weather")
-    available = isinstance(reading, dict) and fresh(reading.get("observed_at_utc"), now)
+    available = isinstance(reading, dict) and fresh(reading.get("observed_at_utc"), now, 90 * 60)
     return {
         "schema_version": 1,
         "status": "available" if available else "unknown",

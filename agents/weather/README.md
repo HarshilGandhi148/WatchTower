@@ -144,9 +144,13 @@ transition findings retain their basis and lower evidence quality. No regional
 hazard, surface-condition, official capacity or runway-closure claim is produced.
 
 Weather-opened cases need congestion snapshot resolution before live use.
-Congestion currently drops assessment IDs for insufficient-data replies; such
-cases close internally rather than reaching validation. Shared review, persistence,
-polling, durable restart recovery and end-to-end startup remain integration handoffs.
+The local launcher now polls METAR and TAF, loads immutable stored snapshots,
+and saves WeatherFinding before replying (see runtime/README.md). Congestion keeps
+insufficient-data finding IDs, so those cases reach validation and explain their
+missing inputs on MissionControl. Full retained METAR/TAF records preserve weather codes,
+cloud details and forecast groups; unavailable or legacy scalar inputs remain unknown.
+Live SDK delivery and persisted reports were verified in the
+configured database; distributed mailbox operation remains a separate handoff.
 Request deduplication here is process-local; the supplied store must enforce
 idempotency after restart and reject conflicting content for an existing finding ID.
 

@@ -48,7 +48,7 @@ from shared.contracts import (
 )
 from shared.orchestration import AssessmentRequest, CandidateReady
 
-OPENING_VALIDITY = timedelta(seconds=120)
+OPENING_VALIDITY = timedelta(minutes=10)
 _STATUS_TO_SIGNAL = {
     "impact": WeatherSignal.IMPACT,
     "no_material_impact": WeatherSignal.NO_MATERIAL_IMPACT,
@@ -128,7 +128,7 @@ class CongestionService:
         now = feeds.window_start_utc
         nearby = nearby_traffic(
             feeds.adsb,
-            now,
+            feeds.cutoff_at_utc or now,
             center=(feeds.configuration.latitude_deg, feeds.configuration.longitude_deg),
             radius_nm=feeds.configuration.radius_nm,
         )
@@ -169,7 +169,11 @@ class CongestionService:
                     demand=prepared.demand
                     if prepared
                     else demand_windows(
-                        feeds.demand_records, feeds.demand_fetched_at_utc, now, horizon
+                        feeds.demand_records,
+                        feeds.demand_fetched_at_utc,
+                        now,
+                        horizon,
+                        evidence_time_utc=feeds.cutoff_at_utc,
                     ),
                     evidence=refs,
                     weather_signal=signal,

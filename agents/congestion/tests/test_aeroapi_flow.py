@@ -65,12 +65,22 @@ class BacklogTests(TestCase):
             (None, NOW),
             (records(), None),
             (records(), NOW - timedelta(minutes=10)),
+            (records(), NOW + timedelta(seconds=1)),
         ):
             with self.subTest(fetched=fetched):
                 backlog = departure_backlog(recs, fetched, NOW)
                 self.assertIsNone(backlog.upstream_waiting)
                 self.assertIsNone(backlog.runway_queue)
                 self.assertTrue(backlog.unavailable_reason)
+
+    def test_records_captured_after_window_start_use_snapshot_cutoff_for_freshness(self) -> None:
+        backlog = departure_backlog(
+            records(),
+            NOW + timedelta(seconds=1),
+            NOW,
+            evidence_time_utc=NOW + timedelta(seconds=2),
+        )
+        self.assertEqual((backlog.upstream_waiting, backlog.runway_queue), (1, 1))
 
     def test_backlog_flights_are_not_counted_again_as_demand(self) -> None:
         backlog = departure_backlog(records(), NOW, NOW)

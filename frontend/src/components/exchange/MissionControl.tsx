@@ -7,16 +7,16 @@ import type {
   AgentRole,
   EvidenceDetail,
 } from '../../features/exchange/types';
-import {
-  sanitize,
-  evidenceFacts,
-  evidenceAircraft,
-} from '../../features/exchange/adapter';
+import { sanitize, evidenceAircraft } from '../../features/exchange/adapter';
 import type { DashboardClient } from '../../lib/connection';
 import { loadEvidence } from '../../lib/spacetimeTransport';
 import { formatTime } from '../../lib/time';
 import { frontendConfig } from '../../lib/config';
+import { currentRecommendations } from '../../features/exchange/recommendations';
 import './mission.css';
+import { RecommendationReviewControls } from './RecommendationReviewControls';
+import { recommendationSummary } from '../../features/exchange/summary';
+import { readableEvidence } from '../../features/exchange/evidence';
 
 const emptyActivity: AgentActivity[] = [];
 const roles: AgentRole[] = ['weather', 'congestion', 'validation'];
@@ -70,15 +70,21 @@ export function MissionControl({
   const exchange = state.exchange;
   const activity = exchange?.activity ?? emptyActivity;
   const cases = [...new Set(activity.map((a) => a.caseId))];
-  const reports = exchange?.reports ?? [];
+  const [reviewedIds, setReviewedIds] = useState<string[]>([]);
+  const reports = currentRecommendations(exchange?.reports ?? [], now).filter(
+    (r) =>
+      !reviewedIds.includes(r.report_id) &&
+      !exchange?.reviews?.some((review) => review.report_id === r.report_id) &&
+      (replay ||
+        (r.recommendation_kind === 'demo' &&
+          !!r.aircraft_recommendations?.length)),
+  );
   const [reportId, setReportId] = useState('');
-  const report =
-    reports.find((r) => r.report_id === reportId) ?? reports.at(-1);
+  const report = reports.find((r) => r.report_id === reportId) ?? reports[0];
   const selectedCase = report?.case_id ?? cases.at(-1);
-  const messages = activity.filter(
-    (a) =>
-      a.caseId === selectedCase &&
-      (!report || a.round <= report.assessment_round),
+  const messages = activity.filter((a) => a.caseId === selectedCase);
+  const reassessing = Boolean(
+    report && messages.some((a) => a.round > report.assessment_round),
   );
   const latest = messages.at(-1);
   const [conversation, setConversation] = useState(false);
@@ -88,6 +94,9 @@ export function MissionControl({
   const projection = replay?.projection;
   const pathPreview = Boolean(
     report &&
+    !reassessing &&
+    state.connection === 'ready' &&
+    Date.parse(report.created_at_utc) <= now &&
     accepted === report.report_id &&
     projection?.snapshotId === report.snapshot_id &&
     Date.parse(report.expires_at_utc) > now,
@@ -106,8 +115,10 @@ export function MissionControl({
     () =>
       selected && detail
         ? evidenceAircraft(detail.content, selected.evidenceIds)
-        : [],
-    [selected, detail],
+        : (report?.aircraft_recommendations?.map(
+            (plane) => plane.aircraft_id,
+          ) ?? []),
+    [selected, detail, report],
   );
   const [error, setError] = useState('');
   const log = useRef<HTMLDivElement>(null);
@@ -159,6 +170,7 @@ export function MissionControl({
     setSelected(message);
   };
   const expired = report && Date.parse(report.expires_at_utc) <= now;
+  const evidence = detail ? readableEvidence(detail.content) : undefined;
   return (
     <main className="mission">
       <a className="skip-link" href="#agent-exchange">
@@ -351,6 +363,9 @@ export function MissionControl({
             <div>
               <span className="eyebrow">AGENT ADVICE</span>
               <h2 id="exchange-heading">Recommendations</h2>
+              <small>
+                Latest 10 minutes · expired advice clears automatically
+              </small>
             </div>
           </header>
           <div className="agent-stage">
@@ -393,35 +408,80 @@ export function MissionControl({
                 <p>
                   {replay
                     ? 'Advice will appear automatically when the validator finishes.'
-                    : 'Recommendations appear here as the backend agents save their results.'}
+                    : 'Agents are watching live traffic. Aircraft recommendations appear on alternating assessment cycles.'}
                 </p>
               </div>
             )}
-            {[...reports].reverse().map((r) => (
-              <button
-                key={r.report_id}
-                className="advice-card"
-                aria-expanded={
-                  conversation && report?.report_id === r.report_id
-                }
-                onClick={() => {
-                  setReportId(r.report_id);
-                  setConversation(true);
-                }}
-              >
-                <span>
-                  {Date.parse(r.expires_at_utc) <= now
-                    ? 'Expired'
-                    : r.outcome.replaceAll('_', ' ')}{' '}
-                  · Round {r.assessment_round}
-                </span>
-                <strong>{r.suggestion}</strong>
-                <small>View agent conversation →</small>
-              </button>
+            {reports.map((r) => (
+              <article key={r.report_id} className="advice-item">
+                <button
+                  className="advice-card"
+                  aria-expanded={
+                    conversation && report?.report_id === r.report_id
+                  }
+                  onClick={() => {
+                    setReportId(r.report_id);
+                    setConversation(true);
+                  }}
+                >
+                  <span>
+                    {Date.parse(r.expires_at_utc) <= now
+                      ? 'Expired'
+                      : r.outcome === 'insufficient_data'
+                        ? 'Limited data'
+                        : r.outcome.replaceAll('_', ' ')}{' '}
+                    · Round {r.assessment_round}
+                    {' · '}
+                    {formatTime(
+                      r.created_at_utc,
+                      frontendConfig.displayTimezone,
+                    )}
+                  </span>
+                  <strong>{recommendationSummary(r.suggestion)}</strong>
+                  <small>View agent conversation →</small>
+                </button>
+                {!!r.aircraft_recommendations?.length && (
+                  <div className="aircraft-recommendations">
+                    <span className="eyebrow">
+                      DEMO FORECAST · 2 MIN AFTER CAPTURE
+                    </span>
+                    {r.aircraft_recommendations.map((plane) => (
+                      <section key={plane.aircraft_id}>
+                        <strong>✈ {plane.label}</strong>
+                        <p>{plane.recommendation}</p>
+                        <small>{plane.prediction}</small>
+                      </section>
+                    ))}
+                  </div>
+                )}
+                <RecommendationReviewControls
+                  report={r}
+                  review={exchange?.reviews?.find(
+                    (review) =>
+                      review.report_id === r.report_id &&
+                      review.snapshot_id === r.snapshot_id &&
+                      review.assessment_round === r.assessment_round,
+                  )}
+                  enabled={
+                    !replay &&
+                    state.connection === 'ready' &&
+                    !activity.some(
+                      (a) =>
+                        a.caseId === r.case_id && a.round > r.assessment_round,
+                    )
+                  }
+                  onReviewed={(id) =>
+                    setReviewedIds((ids) => [...ids, id].slice(-100))
+                  }
+                />
+              </article>
             ))}
           </div>
           {report &&
             report.outcome === 'supported' &&
+            !reassessing &&
+            state.connection === 'ready' &&
+            Date.parse(report.created_at_utc) <= now &&
             !expired &&
             replay &&
             projection?.snapshotId === report.snapshot_id && (
@@ -443,13 +503,7 @@ export function MissionControl({
                 </small>
               </div>
             )}
-          {report && !replay && (
-            <p className="path-unavailable">
-              Live acceptance and predicted paths require the controller and
-              stored-route integration.
-            </p>
-          )}
-          {conversation && (
+          {conversation && report && (
             <>
               <div className="conversation-heading">
                 <h3>Agent conversation</h3>
@@ -501,6 +555,16 @@ export function MissionControl({
                         </time>
                       </header>
                       <p>{m.summary}</p>
+                      {!!m.details?.length && (
+                        <details className="message-details">
+                          <summary>Evidence & coverage details</summary>
+                          <ul>
+                            {m.details.map((value, index) => (
+                              <li key={index}>{value}</li>
+                            ))}
+                          </ul>
+                        </details>
+                      )}
                       <footer>
                         <button onClick={() => inspect(m)}>
                           {m.evidenceIds.length} evidence references ↗
@@ -521,7 +585,7 @@ export function MissionControl({
           {!!exchange?.issues.length && (
             <div className="exchange-warning">{exchange.issues.join(' ')}</div>
           )}
-          {conversation && (
+          {conversation && report && (
             <section
               className={`validator-result outcome-${report?.outcome ?? 'waiting'}`}
               aria-label="Validation result"
@@ -534,9 +598,11 @@ export function MissionControl({
                     : report
                       ? state.connection !== 'ready'
                         ? 'CACHED REPORT'
-                        : report.assessment_round < (latest?.round ?? 1)
+                        : reassessing
                           ? 'PREVIOUS ROUND · REASSESSING'
-                          : report.outcome.replaceAll('_', ' ').toUpperCase()
+                          : report.outcome === 'insufficient_data'
+                            ? 'LIMITED DATA'
+                            : report.outcome.replaceAll('_', ' ').toUpperCase()
                       : 'AWAITING REPORT'}
                 </span>
               </div>
@@ -639,7 +705,7 @@ export function MissionControl({
             <header>
               <div>
                 <span className="eyebrow">EVIDENCE INSPECTOR</span>
-                <h2 id="evidence-title">The record behind the message</h2>
+                <h2 id="evidence-title">What the agents saw</h2>
               </div>
               <button ref={closeButton} onClick={close}>
                 Close
@@ -647,14 +713,14 @@ export function MissionControl({
             </header>
             <p>{selected.summary}</p>
             <dl>
-              <dt>Snapshot</dt>
-              <dd>{selected.snapshotId}</dd>
-              <dt>Assessment</dt>
+              <dt>Review</dt>
               <dd>
                 Round {selected.round} · {selected.provenance}
               </dd>
-              <dt>Source event</dt>
-              <dd>{selected.atUtc}</dd>
+              <dt>Recorded</dt>
+              <dd>
+                {formatTime(selected.atUtc, frontendConfig.displayTimezone)}
+              </dd>
             </dl>
             {error ? (
               <p role="alert">{error}</p>
@@ -663,34 +729,64 @@ export function MissionControl({
             ) : (
               <>
                 <dl>
-                  <dt>Analysis window (UTC)</dt>
+                  <dt>Time window</dt>
                   <dd>
-                    {detail.windowStartUtc} → {detail.windowEndUtc}
+                    {formatTime(
+                      detail.windowStartUtc,
+                      frontendConfig.displayTimezone,
+                    )}{' '}
+                    →{' '}
+                    {formatTime(
+                      detail.windowEndUtc,
+                      frontendConfig.displayTimezone,
+                    )}
                   </dd>
                 </dl>
-                <h3>Copied source facts</h3>
-                <dl>
-                  {evidenceFacts(detail.content).map((fact, i) => (
+                <h3>Weather and traffic at a glance</h3>
+                <div className="readable-evidence-facts">
+                  {evidence?.facts.map((fact, i) => (
                     <div className="evidence-fact" key={i}>
-                      <dt>{fact.label}</dt>
-                      <dd>{fact.value}</dd>
+                      <span>{fact.label}</span>
+                      <strong>{fact.value}</strong>
                     </div>
                   ))}
-                </dl>
-                <h3>Referenced evidence</h3>
-                <ul>
-                  {selected.evidenceIds.map((id) => (
-                    <li key={id}>
-                      <code>{id}</code>
-                    </li>
-                  ))}
-                </ul>
+                </div>
+                {!!evidence?.planes.length && (
+                  <>
+                    <h3>Aircraft near KDTW</h3>
+                    <p>
+                      Closest observed aircraft in this saved snapshot. Altitude
+                      is in feet, speed in knots, and distance in nautical
+                      miles.
+                    </p>
+                    <div className="evidence-aircraft-list">
+                      {evidence.planes.map((plane) => (
+                        <article key={plane.id}>
+                          <strong>✈ {plane.label}</strong>
+                          <span>{plane.distance} from KDTW</span>
+                          <small>
+                            {plane.altitude} · {plane.speed} · heading{' '}
+                            {plane.heading}
+                          </small>
+                        </article>
+                      ))}
+                    </div>
+                  </>
+                )}
                 <p>
-                  These inputs are frozen for this case. New map observations do
-                  not rewrite them.
+                  This is the saved view used for the recommendation. The live
+                  map continues updating separately.
                 </p>
                 <details>
-                  <summary>Inspect sanitized snapshot JSON</summary>
+                  <summary>Technical source record</summary>
+                  <p>Snapshot: {selected.snapshotId}</p>
+                  <ul>
+                    {selected.evidenceIds.map((id) => (
+                      <li key={id}>
+                        <code>{id}</code>
+                      </li>
+                    ))}
+                  </ul>
                   <pre tabIndex={0}>
                     {JSON.stringify(sanitize(detail.content), null, 2)}
                   </pre>

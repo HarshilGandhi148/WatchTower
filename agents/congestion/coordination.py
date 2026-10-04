@@ -35,7 +35,7 @@ from shared.contracts import (
 )
 
 DEFAULT_WEATHER_TIMEOUT = timedelta(seconds=15)
-DEFAULT_CASE_TTL = timedelta(seconds=120)
+DEFAULT_CASE_TTL = timedelta(minutes=10)
 MAX_CORRECTIONS = 1
 
 
@@ -231,7 +231,10 @@ class CaseCoordinator:
 
         case.answered_message_ids.add(envelope.message_id)
         case.signal = signal
-        case.assessment_id = assessment_id if signal is not WeatherSignal.UNKNOWN else None
+        # An insufficient-data finding is still durable evidence. Keep its reference
+        # so congestion and validation can explain the gap instead of silently stopping.
+        # A timeout has no reply/finding and continues to carry None.
+        case.assessment_id = assessment_id
         case.timed_out = False
         case.deadline = None
         case.state = CaseState.READY

@@ -49,7 +49,7 @@ class Orchestrator:
         self,
         addresses: Mapping[AgentName, str],
         *,
-        timeout: timedelta = timedelta(seconds=60),
+        timeout: timedelta = timedelta(minutes=10),
         max_cases: int = 256,
     ) -> None:
         if set(addresses) != set(AgentName):

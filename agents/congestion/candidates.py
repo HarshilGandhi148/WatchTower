@@ -265,17 +265,8 @@ def _metrics(inputs: CandidateInputs, projected: bool) -> tuple[TrafficMetric, .
     refs = inputs.evidence
     if inputs.nearby is not None and refs.traffic:
         out.extend(inputs.nearby.metrics(refs.traffic))
-        change = traffic_change(inputs.nearby, inputs.previous_nearby)
-        if change is not None:
-            out.append(
-                TrafficMetric(
-                    "nearby_aircraft_change",
-                    change,
-                    "aircraft",
-                    MetricBasis.OBSERVED,
-                    (refs.traffic,),
-                )  # fmt: skip
-            )
+        # Previous counts can trigger a review, but only this snapshot is retained.
+        # Do not publish a historical delta as verified by current-only evidence.
     if refs.demand:
         out.extend(inputs.demand.metrics(refs.demand))
     comparison = inputs.comparison

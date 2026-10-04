@@ -257,6 +257,58 @@ def _id(product: str, record: object) -> str:
     return f"awc-{product}-{hashlib.sha256(data.encode()).hexdigest()}"
 
 
+def _metar_weather(raw: str, observed: datetime) -> tuple[str, ...] | None:
+    """Read the weather group of a complete US METAR when JSON omits wxString.
+
+    AWC documents the body order at https://aviationweather.gov/help/data/#metar.
+    Require the surrounding groups; missing, abridged, sensor-failed or unparsed
+    bodies stay unknown. Remarks are never interpreted as current weather.
+    """
+    tokens = raw.rstrip("=").split()
+    if any(t in {"TSNO", "FZRANO", "PNO"} for t in tokens):
+        return None
+    if "RMK" in tokens:
+        tokens = tokens[: tokens.index("RMK")]
+    if tokens and tokens[0] in {"METAR", "SPECI"}:
+        tokens = tokens[1:]
+    if len(tokens) < 6 or tokens[0] != "KDTW" or tokens[1] != observed.strftime("%d%H%MZ"):
+        return None
+    tokens = tokens[2:]
+    if tokens and tokens[0] in {"AUTO", "COR"}:
+        tokens = tokens[1:]
+    if not tokens or not re.fullmatch(r"(?:VRB|\d{3})\d{2,3}(?:G\d{2,3})?KT", tokens[0]):
+        return None
+    tokens = tokens[1:]
+    if tokens and re.fullmatch(r"\d{3}V\d{3}", tokens[0]):
+        tokens = tokens[1:]
+    if len(tokens) > 1 and re.fullmatch(r"\d+", tokens[0]) and "/" in tokens[1]:
+        tokens = tokens[1:]
+    if not tokens or not re.fullmatch(r"[MP]?(?:\d+|\d+/\d+)SM", tokens[0]):
+        return None
+    tokens = tokens[1:]
+    while tokens and re.fullmatch(r"R\d{2}[LRC]?/[MP]?\d{4}(?:V[MP]?\d{4})?FT", tokens[0]):
+        tokens = tokens[1:]
+    weather: list[str] = []
+    while tokens and (_WX_CODE.fullmatch(tokens[0]) or tokens[0] in {"TS", "VCTS"}):
+        weather.append(tokens.pop(0))
+    if len(weather) > 3:
+        return None
+    sky = 0
+    while tokens and re.fullmatch(
+        r"(?:CLR|SKC|VV\d{3}|(?:FEW|SCT|BKN|OVC)\d{3}(?:CB|TCU)?)", tokens[0]
+    ):
+        sky += 1
+        tokens = tokens[1:]
+    if (
+        not sky
+        or len(tokens) != 2
+        or not re.fullmatch(r"M?\d{2}/M?\d{2}", tokens[0])
+        or not re.fullmatch(r"A\d{4}", tokens[1])
+    ):
+        return None
+    return tuple(weather)
+
+
 def parse_metar_response(
     payload: object,
     fetched_at_utc: datetime,
@@ -266,7 +318,13 @@ def parse_metar_response(
     results: dict[datetime, MetarEvidence] = {}
     for record in _records(payload):
         observed = _time(record.get("obsTime"))
-        conditions, raw = parse_conditions(record), _raw(record, "rawOb")
+        raw = _raw(record, "rawOb")
+        decoded = dict(record)
+        if "wxString" not in decoded and not decoded.get("notDecoded"):
+            codes = _metar_weather(raw, observed)
+            if codes is not None:
+                decoded["wxString"] = " ".join(codes)
+        conditions = parse_conditions(decoded)
         item = MetarEvidence(
             evidence_id=_id("metar", [observed.isoformat(), raw, asdict(conditions)]),
             observed_at_utc=observed,

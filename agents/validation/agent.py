@@ -186,6 +186,7 @@ def build_agent(
     llm_transport: Transport = http_transport,
     loop: asyncio.AbstractEventLoop | None = None,
     clock: Callable[[], datetime] | None = None,
+    recover_on_start: bool = True,
 ) -> Agent:
     """Prepare the validation agent for runtime/bureau.py (does not start it)."""
     agent = Agent(
@@ -226,6 +227,7 @@ def build_agent(
             validate=callbacks.validate,
             persist=callbacks.persist,
             storage=storage,
+            recover_on_start=recover_on_start,
         )
     responder = ChatResponder(ledger, config.llm, transport=llm_transport)
     agent.include(build_chat_protocol(responder, clock), publish_manifest=True)

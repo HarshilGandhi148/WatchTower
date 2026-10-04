@@ -29,11 +29,12 @@ from projection.assumptions import (
 from shared.contracts import AgentName, EvidenceQuality
 from shared.messages import CandidateReadyMessage, CaseOpenedMessage, EnvelopeModel
 from shared.orchestration import ValidationVerdict
-from shared.persistence import WeatherFinding, storage_json
+from shared.persistence import WeatherFinding, storage_json, utc
 from shared.settings import AirportConfig, SpacetimeSettings
 from shared.spacetimedb_adapter import SpacetimeAdapter, SpacetimeError, http_transport
 from tests.fixtures.orchestration import TEST_ADDRESSES
 from tests.fixtures.spacetimedb.congestion import packet
+from tests.integration.three_agents_live import exercise_three_agents
 
 
 async def rejected(awaitable) -> None:
@@ -95,7 +96,8 @@ async def exercise_congestion(origin, database, admin, ingest, request_http, red
     opening = await durable.cycle(at)
     snapshot = await congestion.load_snapshot(opening.snapshot_id)
     assert set(snapshot["evidence_ids"]) == set(opening.evidence_ids)
-    assert nearby_traffic(stored_feeds(snapshot).adsb, at).total == 1
+    first_feeds = stored_feeds(snapshot)
+    assert nearby_traffic(first_feeds.adsb, first_feeds.cutoff_at_utc).total == 1
     # The aircraft retained by the foundation test is outside this selected batch.
     assert len(await ingestion.read_observations("aircraft_observations")) >= 2
     for evidence_id in opening.evidence_ids:
@@ -125,7 +127,7 @@ async def exercise_congestion(origin, database, admin, ingest, request_http, red
     )
     request = ctx.send.call_args.args[1].to_request()
     wx_request = await durable.assessment(request, datetime.now(UTC))
-    assert wx_request.window_start_utc == at
+    assert wx_request.window_start_utc == utc(snapshot["cutoff_at_utc"])
 
     # Feed changes while weather works cannot alter existing evidence/window.
     newer = packet("adsb_lol", at + timedelta(seconds=1), "TEST-adsb-new", empty=True)
@@ -142,7 +144,8 @@ async def exercise_congestion(origin, database, admin, ingest, request_http, red
         at + timedelta(minutes=15),
         at + timedelta(seconds=120),
     )
-    assert nearby_traffic(stored_feeds(second).adsb, at).total == 0
+    second_feeds = stored_feeds(second)
+    assert nearby_traffic(second_feeds.adsb, second_feeds.cutoff_at_utc).total == 0
 
     async def test_weather_double(wx_request, number):
         """TEST double: persists a clear assessment, makes no operational claim."""
@@ -219,7 +222,8 @@ async def exercise_congestion(origin, database, admin, ingest, request_http, red
     ready = send.call_args.args[0]
     candidate = await validation.load_candidate(ready.candidate_id)
     assert (
-        candidate.window_start_utc == at and candidate.window_end_utc == wx_request.window_end_utc
+        candidate.window_start_utc == wx_request.window_start_utc
+        and candidate.window_end_utc == wx_request.window_end_utc
     )
     assert candidate.projection_id is None
     assert not any("demand" in metric.name for metric in candidate.traffic_metrics)
@@ -309,7 +313,8 @@ async def exercise_congestion(origin, database, admin, ingest, request_http, red
     )
     batch = next(b for b in frozen["batches"] if b["payload"]["provider"] == "adsb_lol")
     assert len(batch["payload"]["snapshot"]["observations"]) in (0, 1)
-    assert nearby_traffic(stored_feeds(frozen).adsb, at2).total == len(
+    frozen_feeds = stored_feeds(frozen)
+    assert nearby_traffic(frozen_feeds.adsb, frozen_feeds.cutoff_at_utc).total == len(
         batch["payload"]["snapshot"]["observations"]
     )
     for adapter in (ingestion, weather, validation, unauthorized):
@@ -426,3 +431,4 @@ async def exercise_congestion(origin, database, admin, ingest, request_http, red
     )
     expired_ready = replace(ready, candidate_id="TEST-expired", envelope=expired.envelope)
     await rejected(congestion.save_candidate(expired, expired_ready))
+    await exercise_three_agents(ingestion, weather, congestion, validation)

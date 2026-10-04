@@ -1708,7 +1708,7 @@ td button {
   #root {
     height: 100%;
   }
-  body {
+  body:has(.workspace-shell) {
     overflow: hidden;
   }
   .workspace-shell {

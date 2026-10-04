@@ -63,6 +63,7 @@ export function createTrafficMap(
     bearing: 0,
     dragRotate: false,
     touchPitch: false,
+    cooperativeGestures: true,
     attributionControl: false,
   });
   map.touchZoomRotate.disableRotation();

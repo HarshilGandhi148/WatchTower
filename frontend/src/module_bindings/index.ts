@@ -45,6 +45,7 @@ import PruneLiveObservationsReducer from "./prune_live_observations_reducer";
 import RecordCandidateReceiptReducer from "./record_candidate_receipt_reducer";
 import RegisterAssessmentRequestReducer from "./register_assessment_request_reducer";
 import ReportSourceFailureReducer from "./report_source_failure_reducer";
+import ReviewRecommendationReducer from "./review_recommendation_reducer";
 import SeedAgentIdentityReducer from "./seed_agent_identity_reducer";
 import SetIngestionPermissionReducer from "./set_ingestion_permission_reducer";
 import SetServicePermissionReducer from "./set_service_permission_reducer";
@@ -74,6 +75,7 @@ import IngestEventRow from "./ingest_event_table";
 import LatestFeedsRow from "./latest_feeds_table";
 import PendingDeliveriesRow from "./pending_deliveries_table";
 import ProjectionResultsRow from "./projection_results_table";
+import RecommendationReviewsRow from "./recommendation_reviews_table";
 import SourceHealthRow from "./source_health_table";
 import ValidationReportsRow from "./validation_reports_table";
 import ValidationResultRow from "./validation_result_table";
@@ -264,6 +266,21 @@ const tablesSchema = __schema({
       { name: 'projection_results_projection_id_key', constraint: 'unique', columns: ['projectionId'] },
     ],
   }, ProjectionResultsRow),
+  recommendationReviews: __table({
+    name: 'recommendation_reviews',
+    indexes: [
+      { accessor: 'reportId', name: 'recommendation_reviews_report_id_idx_btree', algorithm: 'btree', columns: [
+        'reportId',
+      ] },
+      { accessor: 'requestId', name: 'recommendation_reviews_request_id_idx_btree', algorithm: 'btree', columns: [
+        'requestId',
+      ] },
+    ],
+    constraints: [
+      { name: 'recommendation_reviews_report_id_key', constraint: 'unique', columns: ['reportId'] },
+      { name: 'recommendation_reviews_request_id_key', constraint: 'unique', columns: ['requestId'] },
+    ],
+  }, RecommendationReviewsRow),
   sourceHealth: __table({
     name: 'source_health',
     indexes: [
@@ -346,6 +363,7 @@ const reducersSchema = __reducers(
   __reducerSchema("record_candidate_receipt", RecordCandidateReceiptReducer),
   __reducerSchema("register_assessment_request", RegisterAssessmentRequestReducer),
   __reducerSchema("report_source_failure", ReportSourceFailureReducer),
+  __reducerSchema("review_recommendation", ReviewRecommendationReducer),
   __reducerSchema("seed_agent_identity", SeedAgentIdentityReducer),
   __reducerSchema("set_ingestion_permission", SetIngestionPermissionReducer),
   __reducerSchema("set_service_permission", SetServicePermissionReducer),

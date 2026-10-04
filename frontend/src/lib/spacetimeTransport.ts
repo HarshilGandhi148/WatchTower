@@ -7,6 +7,7 @@ import {
   time,
 } from '../features/exchange/adapter';
 import type { EvidenceDetail } from '../features/exchange/types';
+import { reviewFromJson } from '../features/exchange/reviews';
 import type { DashboardData } from '../features/live/types';
 import { tables, type DbConnection } from '../module_bindings';
 import type {
@@ -45,9 +46,8 @@ export function observationData(
         latitudeDeg: row.latitudeDeg,
         longitudeDeg: row.longitudeDeg,
         trackDeg: row.trackDeg === undefined ? null : row.trackDeg % 360,
-        // Position time accounts for the provider's reported position age.
         observedAtUtc: new Date(
-          Number(row.observedAtUtc.toMillis()) - row.positionAgeS * 1000,
+          Number(row.observedAtUtc.toMillis()),
         ).toISOString(),
         dtwAssociated: false,
       },
@@ -56,11 +56,23 @@ export function observationData(
   const nearby = currentAircraft(positions, now);
   const metar = weather.find((row) => row.airportIcao === 'KDTW');
   const aircraftHealth = health.find((row) => row.provider === 'adsb_lol');
+  const batchIds = new Set(
+    aircraft
+      .filter(
+        (row) =>
+          row.provider === 'adsb_lol' &&
+          aircraftHealth &&
+          row.fetchedAtUtc.toMillis() ===
+            aircraftHealth.fetchedAtUtc.toMillis(),
+      )
+      .map((row) => row.aircraftId),
+  );
+  const batchNearby = nearby.filter((row) => batchIds.has(row.id));
   const aircraftAvailable =
     aircraftHealth?.status === 'ok' &&
+    now >= Number(aircraftHealth.fetchedAtUtc.toMillis()) &&
     now - Number(aircraftHealth.fetchedAtUtc.toMillis()) <= 60_000 &&
-    aircraft.length > 0 &&
-    nearby.length > 0;
+    batchNearby.length > 0;
   return {
     ...emptyData,
     refreshedAtUtc: health.length
@@ -70,7 +82,7 @@ export function observationData(
       : null,
     aircraft: nearby,
     // Retained rows are not a complete provider snapshot; never infer zero demand.
-    nearbyCount: aircraftAvailable ? nearby.length : null,
+    nearbyCount: aircraftAvailable ? batchNearby.length : null,
     weather: metar
       ? {
           summary: `KDTW METAR · ${metarFreshness(metar.observedAtUtc, now)}`,
@@ -110,17 +122,18 @@ export function observationData(
       return {
         id: provider,
         name: provider === 'awc' ? 'AWC METAR' : 'ADSB.lol',
-        status: !row
-          ? 'unknown'
-          : row.status !== 'ok'
-            ? 'unavailable'
-            : stale
-              ? 'stale'
-              : provider === 'awc' &&
-                  metar &&
-                  metarFreshness(metar.observedAtUtc, now) === 'limited'
-                ? 'limited'
-                : 'fresh',
+        status:
+          !row || Number(row.fetchedAtUtc.toMillis()) > now
+            ? 'unknown'
+            : row.status !== 'ok'
+              ? 'unavailable'
+              : stale
+                ? 'stale'
+                : provider === 'awc' &&
+                    metar &&
+                    metarFreshness(metar.observedAtUtc, now) === 'limited'
+                  ? 'limited'
+                  : 'fresh',
         sourceAtUtc: row?.sourceAtUtc?.toISOString() ?? null,
         fetchedAtUtc: row?.fetchedAtUtc.toISOString() ?? null,
         detail: !row
@@ -161,13 +174,27 @@ export function createSpacetimeTransport(): DashboardTransport | undefined {
                 [...connection.db.aircraftObservations.iter()],
                 [...connection.db.sourceHealth.iter()],
               ),
-              exchange: exchangeData({
-                requests: [...connection.db.assessmentRequests.iter()],
-                findings: [...connection.db.agentFindings.iter()],
-                candidates: [...connection.db.flowCandidates.iter()],
-                deliveries: [...connection.db.pendingDeliveries.iter()],
-                reports: [...connection.db.validationReports.iter()],
-              }),
+              exchange: {
+                ...exchangeData(
+                  {
+                    requests: [...connection.db.assessmentRequests.iter()],
+                    findings: [...connection.db.agentFindings.iter()],
+                    candidates: [...connection.db.flowCandidates.iter()],
+                    deliveries: [...connection.db.pendingDeliveries.iter()],
+                    reports: [...connection.db.validationReports.iter()],
+                  },
+                  Date.now(),
+                ),
+                reviews: [
+                  ...connection.db.recommendationReviews.iter(),
+                ].flatMap((row) => {
+                  try {
+                    return [reviewFromJson(JSON.parse(row.contentJson))];
+                  } catch {
+                    return [];
+                  }
+                }),
+              },
             });
         };
         const failed = (message: string, isError: boolean) => {
@@ -198,6 +225,7 @@ export function createSpacetimeTransport(): DashboardTransport | undefined {
                 db.db.flowCandidates,
                 db.db.pendingDeliveries,
                 db.db.validationReports,
+                db.db.recommendationReviews,
               ]) {
                 table.onInsert(emit);
                 table.onUpdate(emit);
@@ -226,6 +254,7 @@ export function createSpacetimeTransport(): DashboardTransport | undefined {
                   tables.flowCandidates,
                   tables.pendingDeliveries,
                   tables.validationReports,
+                  tables.recommendationReviews,
                 ]);
             })
             .onDisconnect(() =>

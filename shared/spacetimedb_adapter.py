@@ -273,6 +273,8 @@ class SpacetimeAdapter:
         start: datetime,
         end: datetime,
         expires: datetime,
+        *,
+        align_window_to_cutoff: bool = False,
     ) -> dict[str, Any]:
         await self.call(
             "create_evidence_snapshot",
@@ -283,6 +285,7 @@ class SpacetimeAdapter:
                 "window_start_utc": start,
                 "window_end_utc": end,
                 "expires_at_utc": expires,
+                **({"align_window_to_cutoff": True} if align_window_to_cutoff else {}),
             },
         )
         return await self.load_snapshot(snapshot_id)

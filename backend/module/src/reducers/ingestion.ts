@@ -70,12 +70,22 @@ export const ingest_weather_record = database.reducer(
     authorize(ctx);
     const input = parseWeather(payloadJson, millis(ctx.timestamp));
     const previous = ctx.db.weatherRecords.provider.find('awc');
-    const content = JSON.stringify([input.sourceRef, input.contentJson]);
+    const content = JSON.stringify(
+      input.retained
+        ? [input.sourceRef, input.contentJson, input.retained]
+        : [input.sourceRef, input.contentJson],
+    );
+    const sameObservation =
+      previous && millis(previous.observedAtUtc) === input.observed;
     if (
       shouldReplace(
-        previous ? millis(previous.observedAtUtc) : undefined,
+        previous
+          ? millis(
+              sameObservation ? previous.fetchedAtUtc : previous.observedAtUtc,
+            )
+          : undefined,
         previous?.contentJson,
-        input.observed,
+        sameObservation ? input.fetched : input.observed,
         content,
       )
     ) {
@@ -120,11 +130,19 @@ export const ingest_aircraft_batch = database.reducer(
         input.sourceRef,
         observation.contentJson,
       ]);
+      const samePositionTime =
+        previous && observation.observed === millis(previous.observedAtUtc);
       if (
         !shouldReplace(
-          previous ? millis(previous.observedAtUtc) : undefined,
+          previous
+            ? millis(
+                samePositionTime
+                  ? previous.fetchedAtUtc
+                  : previous.observedAtUtc,
+              )
+            : undefined,
           previous?.contentJson,
-          observation.observed,
+          samePositionTime ? input.fetched : observation.observed,
           content,
         )
       )

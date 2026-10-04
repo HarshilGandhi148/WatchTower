@@ -21,6 +21,7 @@ type Row = {
   payloadJson: string;
 };
 function fixture() {
+  const permission: { role: string | undefined } = { role: 'ingestion' };
   const rows = new Map<string, Row>();
   const table = {
     eventKey: { find: (key: string) => rows.get(key) },
@@ -36,6 +37,7 @@ function fixture() {
     sender: identity,
     timestamp: new Timestamp(1n),
     db: {
+      servicePermissions: { identity: { find: () => permission } },
       agentIdentity: { name: { find: () => ({ identity }) } },
       ingestEvent: table,
       weatherReading: table,
@@ -55,20 +57,22 @@ function fixture() {
       rootId,
       payloadJson,
     });
-  return { rows, ctx, run };
+  return { rows, ctx, run, permission };
 }
 describe('durable stream reducers', () => {
   it('rejects another sender, missing roots and invalid derived keys', () => {
-    const { ctx, run } = fixture();
+    const { ctx, run, permission } = fixture();
     ctx.sender = outsider;
     expect(() => run(write_ingest_event, 'input', 0n)).toThrow('Unauthorized');
     ctx.sender = identity;
+    permission.role = 'weather';
     expect(() => run(write_weather_reading, 'weather:9', 9n)).toThrow(
       'Missing ingestion',
     );
     expect(() => run(write_weather_reading, 'other-key', 1n)).toThrow(
       'Invalid specialist key',
     );
+    permission.role = 'ingestion';
     expect(() => run(write_ingest_event, 'input', 1n)).toThrow(
       'Ingestion cannot',
     );
@@ -83,8 +87,9 @@ describe('durable stream reducers', () => {
     ).toThrow('Conflicting');
   });
   it('requires both specialists before a verdict', () => {
-    const { run, ctx } = fixture();
+    const { run, ctx, permission } = fixture();
     run(write_ingest_event, 'input', 0n);
+    permission.role = 'validation';
     ctx.db.weatherReading = {
       ...ctx.db.weatherReading,
       iter: () => new Map<string, Row>().values(),
@@ -92,6 +97,19 @@ describe('durable stream reducers', () => {
     expect(() => run(write_validation_result, 'validation:1', 1n)).toThrow(
       'Missing specialist',
     );
+  });
+  it('honors revocation and reassignment even when the identity remains registered', () => {
+    const { run, permission, rows } = fixture();
+    run(write_ingest_event, 'input', 0n);
+    permission.role = 'weather';
+    run(write_weather_reading, 'weather:1', 1n);
+    for (const role of [undefined, 'congestion']) {
+      permission.role = role;
+      expect(() => run(write_weather_reading, 'weather:1', 1n)).toThrow(
+        'Unauthorized',
+      );
+    }
+    expect(rows.size).toBe(2);
   });
   it('rejects malformed payloads and oversized writes', () => {
     const { run } = fixture();

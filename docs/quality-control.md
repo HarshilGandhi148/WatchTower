@@ -24,6 +24,17 @@ case or controller-decision release gates.
 There are two distinct gates: repository checks that exist now, and product
 acceptance checks that must be implemented as behavior arrives.
 
+On October 4, 2026, the local Bureau was also run with the three configured real
+identities against the existing Maincloud database. Live ADS-B observations and AWC
+METAR ingestion produced stored requests, weather findings, congestion candidates,
+validation reports and receipts. The dashboard's public subscriptions and exchange
+adapter read all three roles' activity without parsing errors. See repair-review.md
+and runtime/README.md for the run and restart command. The recommendation repair
+retains full METAR/TAF evidence and verifies clear, concerning and missing-weather
+handoffs in the isolated database gate. Durable operational advisories and controller
+decisions remain incomplete; this
+runtime check does not close those release gates or establish browser visual QA.
+
 The [October 4 repository review](repository-review.md) records the earlier
 foundation/scaffold state and predates the congestion persistence integration
 documented below. Weather, congestion and validation now have component

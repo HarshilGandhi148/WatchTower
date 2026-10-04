@@ -1,5 +1,6 @@
 """Nearby traffic and airport-associated demand stay separate; unknown is never zero."""
 
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from unittest import TestCase
 
@@ -59,6 +60,11 @@ class DistanceTests(TestCase):
 
 
 class NearbyTrafficTests(TestCase):
+    def test_future_fetch_and_position_are_unknown_not_zero(self) -> None:
+        self.assertIsNone(nearby_traffic(snapshot(fetched=NOW + timedelta(seconds=1)), NOW).total)
+        future = replace(aircraft("future"), observed_at_utc=NOW + timedelta(seconds=1))
+        self.assertIsNone(nearby_traffic(snapshot(future), NOW).total)
+
     def test_counts_airborne_and_ground_separately(self) -> None:
         result = nearby_traffic(
             snapshot(
@@ -213,6 +219,22 @@ class DemandWindowTests(TestCase):
         result = demand_windows((record("d1", 1),), NOW - timedelta(minutes=10), NOW)
         self.assertIsNone(result.windows)
         self.assertEqual(result.unavailable_reason, "flight records are stale")
+
+    def test_future_fetch_cannot_establish_zero_demand(self) -> None:
+        result = demand_windows((), NOW + timedelta(seconds=1), NOW)
+        self.assertIsNone(result.windows)
+
+    def test_capture_time_controls_freshness_without_shifting_planning_windows(self) -> None:
+        fetched = NOW + timedelta(seconds=1)
+        result = demand_windows(
+            (record("d1", 1),), fetched, NOW, evidence_time_utc=NOW + timedelta(seconds=2)
+        )
+        assert result.windows
+        self.assertEqual(result.windows[0].start_utc, NOW)
+        self.assertEqual(result.windows[0].departures_confirmed, 1)
+        self.assertIsNone(
+            demand_windows((), fetched, NOW, evidence_time_utc=NOW + timedelta(minutes=6)).windows
+        )
 
     def test_empty_but_fresh_records_give_zero_demand_windows(self) -> None:
         result = self.run_windows(())

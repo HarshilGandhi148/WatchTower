@@ -10,6 +10,7 @@ from agents.validation.orchestrator import Orchestrator
 from agents.validation.protocol import register_orchestration
 from runtime.bureau import build_bureau, build_coordinated_bureau
 from shared.contracts import AgentName
+from shared.messages import CandidateReadyMessage, CaseOpenedMessage
 from shared.orchestration import ValidationVerdict
 
 
@@ -52,6 +53,8 @@ class BureauWiringTests(TestCase):
         self.assertEqual(len(protocol.signed_message_handlers), 2)
         self.assertEqual(len(protocol.unsigned_message_handlers), 0)
         self.assertEqual(len(protocol.intervals), 1)
+        for model in (CaseOpenedMessage, CandidateReadyMessage):
+            self.assertEqual(protocol.replies.get(model.build_schema_digest(model), {}), {})
 
     def test_missing_or_reused_identity_is_rejected(self) -> None:
         for agents in (

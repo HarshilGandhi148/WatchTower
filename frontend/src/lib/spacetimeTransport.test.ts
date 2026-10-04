@@ -21,7 +21,7 @@ const timestamp = (ms = now) => Timestamp.fromDate(new Date(ms));
 const plane: AircraftObservations = {
   aircraftId: 'test-plane',
   provider: 'adsb_lol',
-  observedAtUtc: timestamp(),
+  observedAtUtc: timestamp(now - 10_000),
   fetchedAtUtc: timestamp(),
   sourceRef: 'test',
   latitudeDeg: 42.2124,
@@ -152,6 +152,38 @@ function harness() {
 }
 
 describe('observation dashboard mapping', () => {
+  it('does not count retained aircraft as members of a later successful fetch', () => {
+    const data = observationData(
+      [],
+      [plane],
+      [{ ...health, fetchedAtUtc: timestamp(now + 10_000) }],
+      now + 10_000,
+    );
+    expect(data.aircraft).toHaveLength(1);
+    expect(data.nearbyCount).toBeNull();
+  });
+  it('counts the provider position age once and retains a 70-second-old position', () => {
+    const data = observationData(
+      [],
+      [{ ...plane, observedAtUtc: timestamp(now - 70_000), positionAgeS: 70 }],
+      [health],
+      now,
+    );
+    expect(data.aircraft).toHaveLength(1);
+    expect(data.aircraft[0].observedAtUtc).toBe(
+      new Date(now - 70_000).toISOString(),
+    );
+  });
+  it('does not describe future-dated source health as a fresh successful feed', () => {
+    const data = observationData(
+      [],
+      [plane],
+      [{ ...health, fetchedAtUtc: timestamp(now + 60_000) }],
+      now,
+    );
+    expect(data.nearbyCount).toBeNull();
+    expect(data.sources[1].status).toBe('unknown');
+  });
   it('keeps missing data unknown and unsupported controller features unavailable', () => {
     const data = observationData([], [], [], now);
     expect(data.nearbyCount).toBeNull();

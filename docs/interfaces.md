@@ -1,12 +1,20 @@
 # Integration contracts
 
+The [informational recommendation review](recommendation-review-interface.md)
+adds durable Approve/Disapprove reviews and a private local controller gateway.
+
+The [retained-weather and recommendation-window proposal](recommendation-window-interface.md)
+adds optional full METAR/TAF fields to WeatherRecord and server-aligned live snapshot
+windows. Older scalar payloads and explicit windows remain valid; generated table
+bindings are unchanged. The connected local launcher now uses this handoff.
+
 ## Weather component handoff
 
 The additive [weather interface proposal](weather-interface-proposal.md) defines
 retained METAR/TAF evidence, fixed snapshots and typed WeatherAssessment results.
 The weather component is implemented against injected loading/persistence/case
 callbacks; shared review and live database/runtime wiring remain pending.
-Existing WeatherRecord and weather request/reply wire shapes are preserved.
+Existing scalar WeatherRecord payloads and weather request/reply wire shapes remain valid.
 
 full_technical_plan.md is the product authority. This document identifies
 stable boundaries so the four workstreams can proceed independently.

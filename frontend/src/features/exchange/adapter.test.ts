@@ -37,6 +37,29 @@ describe('stored exchange adapter', () => {
       }).issues[0],
     ).toContain('too many');
   });
+  it('keeps the live window available after more than a thousand historical cases', () => {
+    const now = Date.parse(captured.capturedAtUtc) + 10_000;
+    const row = captured.rows.reports[0];
+    const old = JSON.parse(row.contentJson);
+    old.created_at_utc = new Date(now - 3600_000).toISOString();
+    old.expires_at_utc = new Date(now - 3500_000).toISOString();
+    const data = exchangeData(
+      {
+        ...captured.rows,
+        reports: [
+          ...Array(1001).fill({ contentJson: JSON.stringify(old) }),
+          row,
+        ],
+      },
+      now,
+    );
+    expect(data.issues).toEqual([]);
+    expect(data.reports).toHaveLength(1);
+    expect(data.reports[0].report_id).toBe(
+      JSON.parse(row.contentJson).report_id,
+    );
+    expect(exchangeData(captured.rows, now + 3600_000).reports).toEqual([]);
+  });
   it('rejects malformed reports and removes secrets from JSON evidence', () => {
     expect(() => reportFromJson({ schema_version: 1 })).toThrow();
     expect(

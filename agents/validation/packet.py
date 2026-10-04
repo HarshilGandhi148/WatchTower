@@ -150,7 +150,7 @@ class ValidationConfig:
     faa_flagged_after: timedelta = timedelta(minutes=5)
     demand_excluded_after: timedelta = timedelta(minutes=5)
     window_start_tolerance: timedelta = timedelta(seconds=60)
-    advisory_lifetime: timedelta = timedelta(seconds=120)
+    advisory_lifetime: timedelta = timedelta(minutes=10)
     time_sensitive_peak_minute: int = 5
     max_untrusted_text: int = 500
     response_bounds: ResponseBounds = field(default_factory=ResponseBounds)

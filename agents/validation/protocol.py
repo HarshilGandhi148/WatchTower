@@ -153,17 +153,21 @@ def register_orchestration(
     validate: ValidateCandidate,
     persist: PersistOutcome,
     storage: ValidationStorage | None = None,
+    recover_on_start: bool = True,
 ) -> ValidationGateway:
     """Register handlers on the validator; never create a fourth agent."""
     if agent.address != coordinator.addresses[AgentName.VALIDATION]:
         raise ValueError("Attach orchestration only to the configured validation identity")
-    gateway = ValidationGateway(coordinator, validate, persist, storage, recover_on_start=True)
+    gateway = ValidationGateway(
+        coordinator, validate, persist, storage, recover_on_start=recover_on_start
+    )
     agent.on_event("startup")(gateway.startup)
     protocol = Protocol(name="watchtower-coordination", version="1.0")
-    protocol.on_message(CaseOpenedMessage, replies={AssessmentRequestMessage})(gateway.handle_open)
-    protocol.on_message(CandidateReadyMessage, replies={AssessmentRequestMessage})(
-        gateway.handle_candidate
-    )
+    # Duplicate openings and terminal candidates legitimately need no new request.
+    # SDK reply declarations require a reply on every invocation, so these signed
+    # notifications use optional proactive dispatch through the gateway instead.
+    protocol.on_message(CaseOpenedMessage)(gateway.handle_open)
+    protocol.on_message(CandidateReadyMessage)(gateway.handle_candidate)
     protocol.on_interval(period=1.0)(gateway.sweep)
     agent.include(protocol, publish_manifest=False)
     return gateway

@@ -36,8 +36,21 @@ changing ICAO to another airport fails early instead of mixing airports.
 Start public feed ingestion:
 
 ```sh
-python -m data.ingestion
+python -m data.ingestion --env-file .env
 ```
+
+The launcher reads the explicitly selected file without shell expansion; process
+variables override its values. It validates live mode, the database settings, the
+ingestion token and the application identifier before polling. Errors and retries
+log safe categories without tokens or provider response bodies. To start only the
+aircraft feed, with an explicit application identifier:
+
+```sh
+python -m data.ingestion --env-file .env --provider adsb_lol --user-agent 'WatchTower/0.1 (MHacks DTW demo)'
+```
+
+Use this override if `DATA_USER_AGENT` still contains the example's placeholders.
+It changes the running process only and preserves the environment file.
 
 ADS-B polls every 10 seconds and FAA every 60 seconds independently. Requests have a
 10-second timeout, a 2 MB response limit, disabled redirects and capped exponential
@@ -47,8 +60,8 @@ Successful empty batches, parser rejections/deduplication, source timestamps and
 flags are retained. Database commit retries reuse the same batch ID and payload.
 A failed fetch updates health, and cannot be mistaken for a successful empty response.
 
-AWC polling and the Weather Agent's assessment logic remain the weather owner's work.
-The existing METAR write adapter is available. FlightAware polling stays disabled; the
+The local launcher now polls AWC METAR and connects the Weather Agent's assessment
+and persistence callbacks (runtime/README.md). FlightAware polling stays disabled; the
 normalized flight-record reducer is a storage contract for future authorized ingestion
 and isolated TEST projections. It introduces no paid requests.
 
@@ -64,8 +77,9 @@ The Weather owner must read `adapter.load_snapshot(request.envelope.snapshot_id)
 save `shared.persistence.WeatherFinding` using `adapter.save_weather` before sending a
 reply with the finding ID. Use the requested window, attempt, case, evidence and expiry.
 Findings cannot outlive the fixed snapshot; missing/stale inputs require limitations.
-The integration test's clear-weather responder is explicitly a **TEST double**, not an
-implementation of the Weather Agent.
+The integration test's clear-weather fault scenarios use an explicit **TEST double**.
+It also exercises the real WeatherService and its storage callbacks through a complete
+three-specialist handoff using TEST observations and in-process delivery.
 
 Pass `ValidationStorage(validation_adapter)` to `register_orchestration` or
 `build_coordinated_bureau`. The gateway saves assessment requests before dispatch,

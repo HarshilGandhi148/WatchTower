@@ -83,9 +83,15 @@ export function envelope(
   json: string,
   keys: readonly string[],
   now: number,
+  optionalKeys: readonly string[] = [],
 ): JsonObject {
   if (json.length > 1024 * 1024) throw new Error('Payload too large');
-  const value = object(JSON.parse(json) as unknown, [...envelopeKeys, ...keys]);
+  const parsed = JSON.parse(json) as JsonObject;
+  const value = object(parsed, [
+    ...envelopeKeys,
+    ...keys,
+    ...optionalKeys.filter((key) => Object.hasOwn(parsed, key)),
+  ]);
   if (
     value.schema_version !== 1 ||
     value.data_mode !== 'live' ||
@@ -103,6 +109,7 @@ export function parseWeather(json: string, now: number) {
     json,
     ['airport_icao', 'record_type', 'observed_at_utc', ...weatherFields],
     now,
+    ['metar_evidence', 'taf_evidence'],
   );
   if (
     value.provider !== 'awc' ||
@@ -120,12 +127,98 @@ export function parseWeather(json: string, now: number) {
     visibilityM: numberOrNull(value.visibility_m, 0, 200_000),
     ceilingFt: numberOrNull(value.ceiling_ft, 0, 100_000),
   };
+  const metar = value.metar_evidence ?? null;
+  const tafs = value.taf_evidence ?? [];
+  if (!Array.isArray(tafs) || tafs.length > 4)
+    throw new Error('Invalid retained forecasts');
+  if (JSON.stringify([metar, tafs]).length > 128 * 1024)
+    throw new Error('Retained weather too large');
+  function retained(entry: unknown, forecast: boolean) {
+    const row = object(
+      entry,
+      forecast
+        ? [
+            'evidence_id',
+            'airport_icao',
+            'issued_at_utc',
+            'fetched_at_utc',
+            'source_ref',
+            'raw_text',
+            'start_utc',
+            'end_utc',
+            'groups',
+            'amendment',
+            'temperatures',
+          ]
+        : [
+            'evidence_id',
+            'airport_icao',
+            'observed_at_utc',
+            'fetched_at_utc',
+            'source_ref',
+            'raw_text',
+            'conditions',
+          ],
+    );
+    text(row.evidence_id);
+    text(row.source_ref, 2048);
+    if (
+      row.airport_icao !== 'KDTW' ||
+      typeof row.raw_text !== 'string' ||
+      row.raw_text.length > 32768
+    )
+      throw new Error('Invalid retained weather');
+    const fetch = time(row.fetched_at_utc);
+    if (
+      fetch > fetched ||
+      time(row[forecast ? 'issued_at_utc' : 'observed_at_utc']) > fetch
+    )
+      throw new Error('Retained weather after fetch');
+    if (forecast) {
+      if (
+        time(row.end_utc) <= time(row.start_utc) ||
+        !Array.isArray(row.groups) ||
+        row.groups.length > 100 ||
+        !Array.isArray(row.temperatures)
+      )
+        throw new Error('Invalid retained forecast');
+    } else {
+      if (
+        time(row.observed_at_utc) !== observed ||
+        fetch !== fetched ||
+        row.source_ref !== value.source_ref
+      )
+        throw new Error('Retained METAR differs from observation');
+      const c = row.conditions as JsonObject;
+      if (
+        !c ||
+        typeof c !== 'object' ||
+        Array.isArray(c) ||
+        c.wind_direction_deg !== value.wind_direction_deg ||
+        c.wind_speed_kt !== value.wind_speed_kt ||
+        c.wind_gust_kt !== value.wind_gust_kt ||
+        c.ceiling_ft !== value.ceiling_ft ||
+        (c.visibility_bound === 'exact' ? c.visibility_m : null) !==
+          value.visibility_m
+      )
+        throw new Error('Retained METAR measurements disagree');
+    }
+    return row;
+  }
+  if (metar !== null) retained(metar, false);
+  if (tafs.length && metar === null)
+    throw new Error('Forecasts require retained METAR');
+  for (const taf of tafs) retained(taf, true);
   return {
     observed,
     fetched,
     sourceRef: text(value.source_ref, 2048),
     fields,
     contentJson: JSON.stringify(fields),
+    retained:
+      metar === null
+        ? undefined
+        : { metar_evidence: metar, taf_evidence: tafs },
   };
 }
 

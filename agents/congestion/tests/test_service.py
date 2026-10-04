@@ -133,7 +133,7 @@ class ServiceProtocolTests(TestCase):
         self.assertEqual((step.ready, step.abandoned), ((), (self.opening.case_id,)))
         self.assertEqual(self.service.advance(at(21)).abandoned, ())  # reported once
 
-    def test_insufficient_weather_has_no_assessment_to_reference(self) -> None:
+    def test_insufficient_weather_reaches_validation_with_its_finding(self) -> None:
         weather = self.service.on_assessment_request(validation_request(self.opening), at(2))
         self.service.on_weather_reply(
             weather_reply(weather.envelope.message_id, self.opening, at(3)),
@@ -141,7 +141,11 @@ class ServiceProtocolTests(TestCase):
             "wx-1",
             at(3),
         )
-        self.assertEqual(self.service.advance(at(4)).abandoned, (self.opening.case_id,))
+        step = self.service.advance(at(4))
+        self.assertEqual(step.abandoned, ())
+        (ready,) = step.ready
+        self.assertEqual(ready.weather_assessment_id, "wx-1")
+        self.assertEqual(self.service.candidates[ready.candidate_id].weather_assessment_id, "wx-1")
 
     def test_mismatched_or_out_of_order_requests_are_protocol_errors(self) -> None:
         cases = {

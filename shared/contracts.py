@@ -482,6 +482,8 @@ class WeatherRecord:
     provider: str = "awc"
     airport_icao: str = "KDTW"
     record_type: str = "METAR"
+    metar_evidence: "MetarEvidence | None" = None
+    taf_evidence: tuple["TafEvidence", ...] = ()
 
     def __post_init__(self) -> None:
         _source(self.provider, self.source_ref, self.fetched_at_utc)
@@ -498,6 +500,32 @@ class WeatherRecord:
             (self.ceiling_ft, 100_000),
         ):
             _measurement(value, 0, limit)
+        if self.metar_evidence is not None:
+            record = self.metar_evidence
+            if not isinstance(record, MetarEvidence) or (
+                record.observed_at_utc != self.observed_at_utc
+                or record.fetched_at_utc != self.fetched_at_utc
+                or record.source_ref != self.source_ref
+            ):
+                raise ValueError("Retained METAR must match the normalized observation")
+            c = record.conditions
+            visibility = c.visibility_m if c.visibility_bound is VisibilityBound.EXACT else None
+            if (
+                self.wind_direction_deg,
+                self.wind_speed_kt,
+                self.wind_gust_kt,
+                self.visibility_m,
+                self.ceiling_ft,
+            ) != (c.wind_direction_deg, c.wind_speed_kt, c.wind_gust_kt, visibility, c.ceiling_ft):
+                raise ValueError("Retained METAR measurements disagree")
+        if not isinstance(self.taf_evidence, tuple) or len(self.taf_evidence) > 4:
+            raise ValueError("Invalid retained TAF collection")
+        for forecast in self.taf_evidence:
+            if (
+                not isinstance(forecast, TafEvidence)
+                or forecast.fetched_at_utc > self.fetched_at_utc
+            ):
+                raise ValueError("TAF fetched after weather commit")
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

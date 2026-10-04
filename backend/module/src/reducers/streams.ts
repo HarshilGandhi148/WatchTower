@@ -41,6 +41,10 @@ function writer(role: 'ingestion' | 'weather' | 'congestion' | 'validation') {
   return database.reducer(
     { eventKey: t.string(), rootId: t.u64(), payloadJson: t.string() },
     (ctx, { eventKey, rootId, payloadJson }) => {
+      requireRole(
+        ctx.db.servicePermissions.identity.find(ctx.sender)?.role,
+        role,
+      );
       const allowed = ctx.db.agentIdentity.name.find(role);
       if (!allowed?.identity.isEqual(ctx.sender))
         throw new Error('Unauthorized');

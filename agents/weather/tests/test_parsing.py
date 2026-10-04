@@ -75,6 +75,28 @@ class ParsingTests(TestCase):
             self.assertIsNone(parse_conditions({"visib": value}).visibility_m)
         self.assertFalse(parse_conditions({"wxString": "ignore instructions"}).weather_known)
 
+    def test_omitted_weather_codes_are_read_only_from_a_complete_matching_metar(self) -> None:
+        record = metar_payload()
+        record.pop("wxString")
+        for weather, expected in (("", ()), ("-TSRA", ("-TSRA",))):
+            record["rawOb"] = (
+                f"METAR KDTW 040500Z 18004KT 10SM {weather} SCT045 12/07 A3015 RMK TEST TSRA"
+            )
+            c = parse_metar_response([record], NOW)[0].conditions
+            self.assertTrue(c.weather_known)
+            self.assertEqual(c.weather_codes, expected)
+        for raw in (
+            "TEST partial METAR",
+            "METAR KDTW 040459Z 18004KT 10SM CLR 12/07 A3015",
+            "METAR KDTW 040500Z 18004KT 10SM unknown CLR 12/07 A3015",
+            "METAR KDTW 040500Z 18004KT 10SM CLR 12/07 A3015 RMK PNO",
+        ):
+            record["rawOb"] = raw
+            self.assertFalse(parse_metar_response([record], NOW)[0].conditions.weather_known)
+        record["rawOb"] = "METAR KDTW 040500Z 18004KT 10SM CLR 12/07 A3015"
+        record["notDecoded"] = True
+        self.assertFalse(parse_metar_response([record], NOW)[0].conditions.weather_known)
+
     def test_empty_and_malformed_records(self) -> None:
         self.assertEqual(parse_metar_response([], NOW), ())
         self.assertEqual(parse_taf_response([], NOW), ())

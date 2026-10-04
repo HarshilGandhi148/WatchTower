@@ -10,7 +10,7 @@ from agents.congestion.service import CongestionService
 from shared.contracts import MessageEnvelope, WeatherAssessmentRequest
 from shared.orchestration import AssessmentRequest, CandidateReady
 from shared.settings import AirportConfig
-from shared.spacetimedb_adapter import SpacetimeAdapter
+from shared.spacetimedb_adapter import SpacetimeAdapter, SpacetimeError
 
 
 class PersistentCongestionService:
@@ -27,6 +27,7 @@ class PersistentCongestionService:
         self._lock = asyncio.Lock()
         self._initialized = False
         self._opening: MessageEnvelope | None = None
+        self._opening_started: datetime | None = None
         self._snapshot_request: tuple[str, str, datetime] | None = None
 
     async def initialize(self) -> None:
@@ -39,7 +40,12 @@ class PersistentCongestionService:
     async def cycle(self, now: datetime) -> MessageEnvelope:
         async with self._lock:
             await self.initialize()
-            if self._opening is not None and self._opening.valid_until_utc > now:
+            if (
+                self._opening is not None
+                and self._opening.valid_until_utc > now
+                and now - (self._opening_started or self._opening.created_at_utc)
+                < timedelta(seconds=60)
+            ):
                 return self._opening
             if (
                 self._snapshot_request is None
@@ -48,15 +54,27 @@ class PersistentCongestionService:
                 key = uuid4().hex
                 self._snapshot_request = (f"snap-{key}", f"case-{key}", now)
             snapshot_id, case_id, start = self._snapshot_request
-            snapshot = await self.adapter.create_snapshot(
-                snapshot_id,
-                case_id,
-                self.configuration,
-                start,
-                start + timedelta(minutes=15),
-                start + timedelta(seconds=120),
-            )
+            for attempt in range(3):
+                try:
+                    snapshot = await self.adapter.create_snapshot(
+                        snapshot_id,
+                        case_id,
+                        self.configuration,
+                        start,
+                        start + timedelta(minutes=15),
+                        start + timedelta(minutes=10),
+                        align_window_to_cutoff=True,
+                    )
+                    break
+                except SpacetimeError as error:
+                    if error.status not in {400, 530} or attempt == 2:
+                        raise
+                    # The database rejects a live snapshot while a retained fetch
+                    # is ahead of its clock. Keep the identical request for retry;
+                    # failed transactions commit no snapshot or evidence rows.
+                    await asyncio.sleep(1)
             self._opening = self.service.start_cycle(stored_feeds(snapshot), now)
+            self._opening_started = start
             self._snapshot_request = None
             return self._opening
 

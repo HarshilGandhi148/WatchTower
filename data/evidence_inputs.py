@@ -33,6 +33,8 @@ class FeedSnapshot:
     # True only when every stored flight record carried gate_scheduled_utc and
     # gate_actual_utc (possibly null), so the departure backlog can be observed.
     demand_gate_times: bool = False
+    # Evidence freshness is measured at capture, separately from the planning window.
+    cutoff_at_utc: datetime | None = None
 
 
 def _optional_utc(record: dict[str, Any], key: str) -> datetime | None:
@@ -51,6 +53,7 @@ def stored_feeds(value: dict[str, Any]) -> FeedSnapshot:
     gate_times = False
     faa_ids: list[tuple[str, str]] = []
     start = utc(value["window_start_utc"])
+    cutoff = utc(value["cutoff_at_utc"]) if value.get("cutoff_at_utc") else start
     health = {row["provider"]: row for row in value["health"]}
     errors = list(value["limitations"])
     for batch in value["batches"]:
@@ -97,8 +100,10 @@ def stored_feeds(value: dict[str, Any]) -> FeedSnapshot:
             source["fetched_at_utc"] = fetched
             adsb = AdsbSnapshot(**source, observations=tuple(observations))
         elif provider == "faa":
-            if health.get(provider, {}).get("status") != "ok" or start - fetched > timedelta(
-                minutes=5
+            if (
+                health.get(provider, {}).get("status") != "ok"
+                or fetched > cutoff
+                or cutoff - fetched > timedelta(minutes=5)
             ):
                 continue
             events = []
@@ -136,4 +141,5 @@ def stored_feeds(value: dict[str, Any]) -> FeedSnapshot:
         demand_fetched,
         demand_id,
         gate_times,
+        cutoff,
     )

@@ -8,6 +8,7 @@ export interface AgentActivity {
   event: string;
   atUtc: string;
   summary: string;
+  details?: string[];
   evidenceIds: string[];
   windowStartUtc?: string;
   windowEndUtc?: string;
@@ -30,11 +31,32 @@ export interface ValidationReport {
     reason: string;
     evidence_ids: string[];
   }[];
+  recommendation_kind?: 'demo' | 'monitoring';
+  aircraft_recommendations?: AircraftRecommendation[];
+}
+export interface AircraftRecommendation {
+  aircraft_id: string;
+  label: string;
+  recommendation: string;
+  prediction: string;
+  evidence_id: string;
+  observed_at_utc: string;
+  forecast_at_utc: string | null;
+  projected_latitude_deg: number | null;
+  projected_longitude_deg: number | null;
 }
 export interface ExchangeData {
   activity: AgentActivity[];
   reports: ValidationReport[];
   issues: string[];
+  reviews?: RecommendationReview[];
+}
+export interface RecommendationReview {
+  report_id: string;
+  snapshot_id: string;
+  assessment_round: number;
+  decision: 'approve' | 'disapprove';
+  reviewed_at_utc: string;
 }
 export interface EvidenceDetail {
   snapshotId: string;

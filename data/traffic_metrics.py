@@ -92,6 +92,8 @@ def nearby_traffic(
 
     if snapshot is None:
         return unavailable("no ADS-B snapshot")
+    if snapshot.fetched_at_utc > now_utc:
+        return unavailable("ADS-B snapshot is future-dated")
     if now_utc - snapshot.fetched_at_utc > max_snapshot_age:
         return unavailable("ADS-B snapshot is stale")
 
@@ -102,6 +104,7 @@ def nearby_traffic(
             no_position += 1
         elif obs.is_stale(max_position_age_s) or (
             obs.observed_at_utc is None
+            or obs.observed_at_utc > now_utc
             or (now_utc - obs.observed_at_utc).total_seconds() > max_position_age_s
         ):
             stale += 1
@@ -199,6 +202,7 @@ def demand_windows(
     taxi_in_minutes: int | None = None,
     max_age: timedelta = DEFAULT_MAX_DEMAND_AGE,
     exclude_flight_ids: frozenset[str] = frozenset(),
+    evidence_time_utc: datetime | None = None,
 ) -> DemandWindows:
     """Bucket airport-associated flights into five-minute windows from ``now_utc``.
 
@@ -208,9 +212,12 @@ def demand_windows(
     outside the horizon are not counted. ``exclude_flight_ids`` (e.g. the departure backlog,
     which the projection counts as its initial queue) are skipped so nothing is counted
     twice. ``None`` records, or records fetched longer ago than ``max_age``, make demand
-    unavailable rather than zero.
+    unavailable rather than zero. ``evidence_time_utc`` is the frozen snapshot cutoff
+    when capture follows the planning window start; it affects freshness only.
     """
     _require_utc(now_utc)
+    evidence_time = evidence_time_utc or now_utc
+    _require_utc(evidence_time)
     if horizon_minutes <= 0 or horizon_minutes % WINDOW_MINUTES:
         raise ValueError("horizon_minutes must be a positive multiple of 5")
     for taxi in (taxi_out_minutes, taxi_in_minutes):
@@ -219,7 +226,9 @@ def demand_windows(
     if records is None or fetched_at_utc is None:
         return DemandWindows(None, unavailable_reason="no flight records available")
     _require_utc(fetched_at_utc)
-    if now_utc - fetched_at_utc > max_age:
+    if fetched_at_utc > evidence_time:
+        return DemandWindows(None, unavailable_reason="flight records are future-dated")
+    if evidence_time - fetched_at_utc > max_age:
         return DemandWindows(None, unavailable_reason="flight records are stale")
 
     count = horizon_minutes // WINDOW_MINUTES
@@ -305,13 +314,18 @@ def departure_backlog(
     now_utc: datetime,
     *,
     max_age: timedelta = DEFAULT_MAX_DEMAND_AGE,
+    evidence_time_utc: datetime | None = None,
 ) -> DepartureBacklog:
     """Estimate the departure backlog at ``now_utc`` from confirmed departure records."""
     _require_utc(now_utc)
+    evidence_time = evidence_time_utc or now_utc
+    _require_utc(evidence_time)
     if records is None or fetched_at_utc is None:
         return DepartureBacklog(None, None, unavailable_reason="no flight records available")
     _require_utc(fetched_at_utc)
-    if now_utc - fetched_at_utc > max_age:
+    if fetched_at_utc > evidence_time:
+        return DepartureBacklog(None, None, unavailable_reason="flight records are future-dated")
+    if evidence_time - fetched_at_utc > max_age:
         return DepartureBacklog(None, None, unavailable_reason="flight records are stale")
 
     upstream = runway = unclassified = 0

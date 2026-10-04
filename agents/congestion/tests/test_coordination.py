@@ -193,9 +193,11 @@ class WeatherReplyTests(TestCase):
         result = self.reply(weather("w", self.request_id), WeatherSignal.IMPACT, None)
         self.assertEqual(result.reason, "impact_without_assessment_id")
 
-    def test_insufficient_weather_is_unknown_and_drops_the_assessment_id(self) -> None:
+    def test_insufficient_weather_preserves_the_finding_with_unknown_signal(self) -> None:
         self.reply(weather("w", self.request_id), WeatherSignal.UNKNOWN, "wx-1")
-        self.assertIsNone(self.coordinator.view("case-1").weather_assessment_id)
+        view = self.coordinator.view("case-1")
+        self.assertEqual(view.weather_assessment_id, "wx-1")
+        self.assertEqual(view.weather_signal, WeatherSignal.UNKNOWN)
 
 
 class SubmitAndTimeoutTests(TestCase):

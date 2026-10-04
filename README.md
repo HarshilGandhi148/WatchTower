@@ -53,7 +53,7 @@ WatchTower aims to make useful information easier for controllers to act on. If 
 
 WatchTower is a prototype. The dashboard, a local backend for weather and aircraft observations, and communication tools for the three agents are implemented. You can explore the review experience in a separate sample-data demo.
 
-Shared ADS-B/FAA polling, immutable database snapshots, durable congestion candidates, and validation delivery receipts are implemented and tested against a local database. The Weather Agent, domain validation/publication, and backend controller decisions remain unfinished. The demo uses sample data and illustrative aircraft paths. WatchTower is not a certified air traffic control system.
+ADS-B/FAA polling, full AWC METAR/TAF ingestion, immutable snapshots, durable weather findings, congestion candidates, and validation reports/receipts are implemented. The three specialists can run together with `python -m runtime.live --env-file .env --user-agent 'WatchTower/0.1 (MHacks DTW demo)'`; see [runtime setup](runtime/README.md). Cases refresh every minute and recommendations expire automatically. Unavailable weather and forecasts remain explicit gaps. Operational advisory publication and backend controller decisions remain unfinished. The separate demo uses sample data and illustrative aircraft paths. WatchTower is not a certified air traffic control system.
 
 See the [technical plan](full_technical_plan.md) and [remaining release checks](docs/quality-control.md) for details. See the [congestion integration guide](docs/congestion-spacetime.md) for the persistence flow, service roles, and TEST coverage.
 
@@ -70,12 +70,12 @@ npm --prefix frontend run dev:test
 
 Open **http://127.0.0.1:5174** to explore the Detroit demo. No API keys or database are needed. The map needs an internet connection and a browser that supports WebGL.
 
-1. Select a suggestion and read its explanation.
-2. Preview the possible effects and move through the 15-minute timeline.
-3. Approve it, edit it and run the demo's revalidation step, or dismiss it.
-4. Open **History** to see the recorded decision.
+1. Choose a **Replay scenario** and watch Weather, Congestion, and Validation activity appear.
+2. Select a recommendation to open its agent conversation and inspect the cited evidence.
+3. Try the correction scenario to see an earlier recommendation held while reassessment runs.
+4. When a supported report is available, select **Accept for TEST path preview** to play illustrative routes.
 
-Use **Demo settings** in the footer to switch controller identities or try connection failures. Everything in this mode uses sample data; reload the page to reset it.
+Use **Pause**, **Play**, and **Restart** beside the scenario selector to control replay. Acceptance is a local preview selection; it does not record a backend controller decision. The current MissionControl page has no History page or controller edit/ignore workflow. Everything in this mode uses sample data.
 
 ### Run the local backend and dashboard
 
@@ -101,10 +101,10 @@ spacetime start --listen-addr 127.0.0.1:3000
 In another terminal, from the project folder:
 
 ```sh
-spacetime dev --delete-data=never
+spacetime dev watchtower-local --server http://127.0.0.1:3000 --delete-data=never
 ```
 
-Confirm the publish target is the local server, then open the dashboard URL printed in the terminal, usually **http://localhost:5173**. Before ingestion is started, the dashboard will show no live observations. This mode currently supports viewing observations, not the complete suggestion-and-approval workflow.
+The checked-in database configuration points to Maincloud, so specify the local target explicitly as above. Set both environment files to the same intended database and server before starting; preserve any existing credentials. Open the dashboard URL printed in the terminal, usually **http://127.0.0.1:5173**. Before ingestion is started, a new local database has no observations. MissionControl displays observations and stored informational reports; the complete controller-decision workflow remains pending.
 
 Keep API keys and tokens out of Git and browser settings. For data access, configuration, and the remaining startup steps, follow the [development guide](docs/development.md).
 

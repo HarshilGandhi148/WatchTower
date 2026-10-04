@@ -141,6 +141,15 @@ export const ProjectionResults = __t.object("ProjectionResults", {
 });
 export type ProjectionResults = __Infer<typeof ProjectionResults>;
 
+export const RecommendationReviews = __t.object("RecommendationReviews", {
+  reportId: __t.string(),
+  requestId: __t.string(),
+  reviewerIdentity: __t.identity(),
+  reviewedAtUtc: __t.timestamp(),
+  contentJson: __t.string(),
+});
+export type RecommendationReviews = __Infer<typeof RecommendationReviews>;
+
 export const ServicePermissions = __t.object("ServicePermissions", {
   identity: __t.identity(),
   role: __t.string(),

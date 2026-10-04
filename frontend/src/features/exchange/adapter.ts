@@ -1,4 +1,9 @@
 import type { AgentActivity, ExchangeData, ValidationReport } from './types';
+import {
+  currentRecommendations,
+  recommendationWindowMs,
+} from './recommendations';
+import { recommendationSummary, weatherSummary } from './summary';
 type Row = {
   contentJson: string;
   status?: string;
@@ -45,6 +50,37 @@ export function reportFromJson(raw: unknown): ValidationReport {
     outcome: v.outcome as ValidationReport['outcome'],
     suggestion: text(v.suggestion),
     limitations: strings(v.limitations),
+    recommendation_kind:
+      v.recommendation_kind === 'demo'
+        ? 'demo'
+        : v.recommendation_kind === 'monitoring'
+          ? 'monitoring'
+          : undefined,
+    aircraft_recommendations: Array.isArray(v.aircraft_recommendations)
+      ? v.aircraft_recommendations.map((raw) => {
+          const plane = object(raw);
+          return {
+            aircraft_id: text(plane.aircraft_id),
+            label: text(plane.label),
+            recommendation: text(plane.recommendation),
+            prediction: text(plane.prediction),
+            evidence_id: text(plane.evidence_id),
+            observed_at_utc: time(plane.observed_at_utc),
+            forecast_at_utc:
+              plane.forecast_at_utc === null
+                ? null
+                : time(plane.forecast_at_utc),
+            projected_latitude_deg:
+              typeof plane.projected_latitude_deg === 'number'
+                ? plane.projected_latitude_deg
+                : null,
+            projected_longitude_deg:
+              typeof plane.projected_longitude_deg === 'number'
+                ? plane.projected_longitude_deg
+                : null,
+          };
+        })
+      : [],
     checks: v.checks.map((raw) => {
       const c = object(raw);
       if (!['pass', 'fail', 'not_applicable'].includes(text(c.status)))
@@ -58,24 +94,46 @@ export function reportFromJson(raw: unknown): ValidationReport {
     }),
   };
 }
-export function exchangeData(groups: {
-  requests: Row[];
-  findings: Row[];
-  candidates: Row[];
-  deliveries: Row[];
-  reports: Row[];
-}): ExchangeData {
+export function exchangeData(
+  groups: {
+    requests: Row[];
+    findings: Row[];
+    candidates: Row[];
+    deliveries: Row[];
+    reports: Row[];
+  },
+  now?: number,
+): ExchangeData {
   const activity: AgentActivity[] = [],
     reports: ValidationReport[] = [],
     issues: string[] = [];
   for (const [kind, rows] of Object.entries(groups)) {
-    if (rows.length > 1000) {
+    const recent =
+      now === undefined
+        ? rows
+        : rows.filter((row) => {
+            try {
+              const v = object(JSON.parse(row.contentJson));
+              const created = Date.parse(
+                kind === 'reports'
+                  ? text(v.created_at_utc)
+                  : text(object(v.envelope).created_at_utc),
+              );
+              return (
+                !Number.isFinite(created) ||
+                created > now - recommendationWindowMs
+              );
+            } catch {
+              return true; // Invalid current records remain visible as adapter issues.
+            }
+          });
+    if (recent.length > 1000) {
       issues.push(
         `${kind}: too many records; narrow the database retention window.`,
       );
       continue;
     }
-    for (const row of rows)
+    for (const row of recent)
       try {
         const v = object(JSON.parse(row.contentJson));
         if (kind === 'reports') {
@@ -89,7 +147,8 @@ export function exchangeData(groups: {
             agent: 'validation',
             event: 'Evidence checked',
             atUtc: r.created_at_utc,
-            summary: r.suggestion,
+            summary: recommendationSummary(r.suggestion),
+            details: r.limitations,
             evidenceIds: [...new Set(r.checks.flatMap((c) => c.evidence_ids))],
             provenance: 'LIVE',
           });
@@ -114,11 +173,17 @@ export function exchangeData(groups: {
           a.event =
             a.round === 2 ? 'Reassessment requested' : 'Assessment requested';
           a.summary =
-            'Assess traffic and weather against the same frozen evidence snapshot.';
+            'Reviewing KDTW weather and aircraft observations for the next flow window.';
         } else if (kind === 'findings') {
           a.agent = 'weather';
           a.event = 'Weather assessment stored';
-          a.summary = text(v.summary);
+          a.summary = weatherSummary(v);
+          a.details = [
+            text(v.summary),
+            ...strings(v.missing_inputs ?? []).map(
+              (value) => `Coverage to refine: ${value.replaceAll('_', ' ')}`,
+            ),
+          ];
           a.windowStartUtc = time(v.window_start_utc);
           a.windowEndUtc = time(v.window_end_utc);
         } else if (kind === 'candidates') {
@@ -127,7 +192,14 @@ export function exchangeData(groups: {
             ? v.traffic_metrics.map(object)
             : [];
           const count = metrics.find((m) => m.name === 'nearby_aircraft_total');
-          a.summary = `${count && typeof count.value === 'number' ? `${count.value} nearby aircraft observed.` : 'Current nearby traffic is unknown.'} ${strings(v.required_missing_inputs).length ? `Limitations: ${strings(v.required_missing_inputs).join('; ')}.` : 'Candidate prepared for evidence checks.'}`;
+          const airborne = metrics.find(
+            (m) => m.name === 'nearby_aircraft_airborne',
+          );
+          const ground = metrics.find(
+            (m) => m.name === 'nearby_aircraft_on_ground',
+          );
+          a.summary = `${count && typeof count.value === 'number' ? `${count.value} nearby aircraft observed${airborne && ground ? ` (${airborne.value} airborne, ${ground.value} on ground)` : ''}. ` : ''}Reviewing available observations alongside the weather assessment.`;
+          a.details = strings(v.required_missing_inputs);
           a.windowStartUtc = time(v.window_start_utc);
           a.windowEndUtc = time(v.window_end_utc);
           // Candidate rows retain their assessment round in the delivery record.
@@ -150,7 +222,7 @@ export function exchangeData(groups: {
           a.id += ':received';
           a.event = 'Received by validator';
           a.summary =
-            'Saved candidate retrieved. Receipt confirms delivery; evidence checks are separate.';
+            'Weather and traffic assessment received. Checking the recommendation.';
           a.atUtc = row.updatedAtUtc?.toISOString() ?? a.atUtc;
         }
         activity.push(a);
@@ -162,9 +234,10 @@ export function exchangeData(groups: {
     activity: [...new Map(activity.map((a) => [a.id, a])).values()].sort(
       (a, b) => a.atUtc.localeCompare(b.atUtc) || a.id.localeCompare(b.id),
     ),
-    reports: reports.sort((a, b) =>
-      a.created_at_utc.localeCompare(b.created_at_utc),
-    ),
+    reports: (now === undefined
+      ? reports
+      : currentRecommendations(reports, now)
+    ).sort((a, b) => a.created_at_utc.localeCompare(b.created_at_utc)),
     issues: [...new Set(issues)],
   };
 }

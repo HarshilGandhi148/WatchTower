@@ -16,11 +16,9 @@ in requirements-runtime.txt. Install it with
 SDK construction, signed protocol registration and serialization are tested on
 Python 3.13; these tests do not connect a live agent system.
 
-The validation-owned orchestrator and Bureau builder are implemented; see
-docs/orchestration.md. Agent factories and live/domain/database callbacks remain
-pending. Add direct HTTP/XML/environment dependencies as their adapters are
-implemented, then regenerate the runtime lock with the command in its header.
-Do not hand-edit generated dependency hashes.
+The validation-owned orchestrator, three specialist factories, database callbacks
+and local live launcher are implemented; see runtime/README.md and
+docs/orchestration.md. No new dependencies are needed for this launcher.
 
 ## Local SpacetimeDB observation foundation
 
@@ -42,12 +40,14 @@ spacetime start --listen-addr 127.0.0.1:3000
 Terminal 2, repository root:
 
 ```sh
-spacetime dev --delete-data=never
+spacetime dev watchtower-local --server http://127.0.0.1:3000 --delete-data=never
 ```
 
-The dev command publishes the implemented observation module, regenerates
-bindings, watches changes and starts Vite. Confirm the publish target is the
-local server; no automatic data deletion is configured. Open the Vite URL
+The checked-in spacetime.json targets Maincloud; the explicit database and server
+arguments above select the local instance. The dev command publishes the module,
+regenerates bindings, watches changes and starts Vite. Set the backend and frontend
+environment files to that same target; preserve credentials belonging to an existing
+remote setup. No automatic data deletion is configured. Open the Vite URL
 (normally http://localhost:5173). Without provider ingestion it should show
 Connected / No live observations, never fabricated aircraft. The first publish
 records the publisher's identity as administrator. Local database names can be
@@ -62,7 +62,7 @@ response headers in committed files. Run the following with the publishing
 CLI identity, replacing the public identity placeholder:
 
 ```sh
-spacetime call watchtower-local set_ingestion_permission '"<64-character-identity-hex>"' true
+spacetime call --server http://127.0.0.1:3000 watchtower-local set_ingestion_permission '"<64-character-identity-hex>"' true
 ```
 
 The administrator can revoke it by calling the same reducer with false. The
@@ -72,7 +72,9 @@ from process environment (the launcher must load/export .env). No secrets are
 provisioned or production observations seeded by repository setup.
 
 ADSB/FAA parsers and independent polling are implemented in data/ingestion.py.
-AWC polling and optional paid providers remain pending. The observation boundary is
+AWC METAR polling is implemented in data/weather_ingestion.py and started by
+runtime/live.py. TAF/full weather-code persistence and optional paid providers remain
+pending. The observation boundary is
 shared.contracts.WeatherRecord / AircraftBatch / SourceFailure and the adapter's
 async ingest_weather_record / ingest_aircraft_batch / report_source_failure
 methods. Read methods query only the public observation tables, bounded to
@@ -86,8 +88,10 @@ Run `make check-spacetime` for the required real database gate. It creates an
 isolated temporary local server and unique TEST database, verifies two SDK
 clients and Python access, and compares regenerated bindings. It needs no
 provider credentials and fails if CLI/server 2.10.2 is unavailable. CI runs both
-gates. This verifies the observation and congestion persistence path using a TEST
-weather double; operational release gates remain open.
+gates. This verifies the existing fault scenarios with a TEST weather double, plus
+a full stored handoff using the real weather/congestion/validation services and TEST
+evidence. The latter uses explicit in-process message delivery; live SDK delivery is
+a separate runtime check. Operational release gates remain open.
 
 ## Eventual live start order
 

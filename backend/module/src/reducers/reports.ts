@@ -12,7 +12,9 @@ export const store_validation_report = database.reducer(
       ctx.db.servicePermissions.identity.find(ctx.sender)?.role,
       'validation',
     );
-    const v = object(parse(payloadJson), [
+    const raw = parse(payloadJson);
+    const extended = 'recommendation_kind' in raw;
+    const v = object(raw, [
       'schema_version',
       'report_id',
       'candidate_id',
@@ -25,6 +27,7 @@ export const store_validation_report = database.reducer(
       'checks',
       'suggestion',
       'limitations',
+      ...(extended ? ['recommendation_kind', 'aircraft_recommendations'] : []),
     ]);
     const reportId = text(v.report_id),
       candidateId = text(v.candidate_id);
@@ -101,6 +104,78 @@ export const store_validation_report = database.reducer(
     }
     if ((v.outcome === 'supported') !== (failures === 0))
       throw new Error('Contradictory report outcome');
+    if (extended) {
+      if (
+        !['demo', 'monitoring'].includes(text(v.recommendation_kind)) ||
+        !Array.isArray(v.aircraft_recommendations) ||
+        v.aircraft_recommendations.length > 3 ||
+        (v.recommendation_kind === 'demo') !==
+          v.aircraft_recommendations.length > 0
+      )
+        throw new Error('Invalid demo recommendation');
+      const copied = record(parse(s.contentJson));
+      const observed = new Map<string, Record<string, unknown>>();
+      for (const batch of copied.batches as Record<string, unknown>[]) {
+        const payload = record(batch.payload);
+        if (payload.provider !== 'adsb_lol') continue;
+        for (const plane of record(payload.snapshot).observations as Record<
+          string,
+          unknown
+        >[])
+          observed.set(String(plane.aircraft_id), {
+            ...plane,
+            evidence_id: batch.batch_id,
+          });
+      }
+      const seenAircraft = new Set<string>();
+      for (const rawPlane of v.aircraft_recommendations) {
+        const plane = object(rawPlane, [
+          'aircraft_id',
+          'label',
+          'recommendation',
+          'prediction',
+          'evidence_id',
+          'observed_at_utc',
+          'forecast_at_utc',
+          'projected_latitude_deg',
+          'projected_longitude_deg',
+        ]);
+        const id = text(plane.aircraft_id),
+          evidence = text(plane.evidence_id),
+          input = observed.get(id);
+        if (
+          !input ||
+          seenAircraft.has(id) ||
+          input.evidence_id !== evidence ||
+          !allowed.includes(evidence) ||
+          time(input.observed_at_utc) !== time(plane.observed_at_utc) ||
+          time(plane.observed_at_utc) > Number(s.cutoffAtUtc.toMillis()) ||
+          Number(s.cutoffAtUtc.toMillis()) - time(plane.observed_at_utc) > 30000
+        )
+          throw new Error(
+            'Aircraft recommendation is not bound to fresh observed evidence',
+          );
+        seenAircraft.add(id);
+        text(plane.label, 32);
+        text(plane.recommendation, 512);
+        text(plane.prediction, 1024);
+        if (plane.forecast_at_utc !== null) {
+          if (
+            time(plane.forecast_at_utc) - time(plane.observed_at_utc) !==
+              120000 ||
+            typeof plane.projected_latitude_deg !== 'number' ||
+            Math.abs(plane.projected_latitude_deg) > 90 ||
+            typeof plane.projected_longitude_deg !== 'number' ||
+            Math.abs(plane.projected_longitude_deg) > 180
+          )
+            throw new Error('Invalid demo forecast');
+        } else if (
+          plane.projected_latitude_deg !== null ||
+          plane.projected_longitude_deg !== null
+        )
+          throw new Error('Forecast coordinates require a time');
+      }
+    }
     ctx.db.validationReports.insert({
       reportId,
       candidateId,

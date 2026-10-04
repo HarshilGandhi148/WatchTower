@@ -27,11 +27,111 @@ class ReportTests(TestCase):
         self.assertEqual(report.outcome, "supported")
         self.assertEqual(len(report.checks), 6)
         self.assertIn("no operational", report.checks[4].reason)
+        self.assertIn("nearby aircraft within", report.suggestion)
+        self.assertIn("KDTW", report.suggestion)
+
+    def test_incomplete_report_names_weather_gaps_and_uses_current_counts(self) -> None:
+        c = capture("concern")
+        candidate = candidate_from_dict(json.loads(c["rows"]["candidates"][0]["contentJson"]))
+        finding = json.loads(c["rows"]["findings"][0]["contentJson"])
+        finding.update(status="insufficient_data", missing_inputs=["TAF_window_coverage"])
+        report = evaluate(candidate, c["snapshot"], finding, 1, NOW + timedelta(seconds=8))
+        self.assertEqual(report.outcome, "insufficient_data")
+        self.assertIn("TAF coverage for the analysis window", report.suggestion)
+        self.assertIn("TAF_window_coverage", report.limitations)
+        self.assertIn("nearby aircraft within", report.suggestion)
+        self.assertTrue(report.suggestion.startswith("Review the available KDTW weather"))
+        self.assertNotIn("Assessment incomplete", report.suggestion)
+        self.assertNotIn("Obtain the missing or verifiable inputs", report.suggestion)
+        self.assertNotEqual(report.suggestion, self.evaluate_capture("outage").suggestion)
 
     def test_failed_feed_remains_unknown(self) -> None:
         report = self.evaluate_capture("outage")
         self.assertEqual(report.outcome, "insufficient_data")
         self.assertEqual(next(c.status for c in report.checks if c.name == "inputs"), "fail")
+        self.assertTrue(report.suggestion.startswith("Review weather-related flow pressure"))
+        self.assertIn("Nearby traffic is unknown", report.suggestion)
+
+    def test_both_missing_feeds_still_give_a_recovery_recommendation(self) -> None:
+        c = capture("outage")
+        candidate = candidate_from_dict(json.loads(c["rows"]["candidates"][0]["contentJson"]))
+        finding = json.loads(c["rows"]["findings"][0]["contentJson"])
+        c["snapshot"]["batches"] = []
+        c["snapshot"]["weather"] = []
+        finding.update(status="insufficient_data", missing_inputs=["fresh_METAR"])
+        report = evaluate(candidate, c["snapshot"], finding, 1, NOW + timedelta(seconds=8))
+        self.assertEqual(report.outcome, "insufficient_data")
+        self.assertTrue(report.suggestion.startswith("Refresh KDTW weather and aircraft updates"))
+        self.assertIn("Nearby traffic is unknown", report.suggestion)
+        self.assertIn("weather is unavailable", report.suggestion)
+
+    def test_missing_weather_still_recommends_monitoring_observed_aircraft(self) -> None:
+        c = capture("concern")
+        candidate = candidate_from_dict(json.loads(c["rows"]["candidates"][0]["contentJson"]))
+        finding = json.loads(c["rows"]["findings"][0]["contentJson"])
+        c["snapshot"]["weather"] = []
+        finding.update(status="insufficient_data", missing_inputs=["fresh_METAR"])
+        report = evaluate(candidate, c["snapshot"], finding, 1, NOW + timedelta(seconds=8))
+        self.assertEqual(report.outcome, "insufficient_data")
+        self.assertTrue(
+            report.suggestion.startswith("Monitor nearby aircraft and refresh KDTW weather")
+        )
+        self.assertIn("nearby aircraft within", report.suggestion)
+        self.assertNotIn("no material weather impact", report.suggestion)
+
+    def test_missing_traffic_still_recommends_weather_review(self) -> None:
+        c = capture("concern")
+        candidate = candidate_from_dict(json.loads(c["rows"]["candidates"][0]["contentJson"]))
+        finding = json.loads(c["rows"]["findings"][0]["contentJson"])
+        c["snapshot"]["batches"] = []
+        report = evaluate(
+            replace(candidate, traffic_metrics=()),
+            c["snapshot"],
+            finding,
+            1,
+            NOW + timedelta(seconds=8),
+        )
+        self.assertEqual(report.outcome, "insufficient_data")
+        self.assertTrue(report.suggestion.startswith("Review weather-related flow pressure"))
+        self.assertIn("restore aircraft updates", report.suggestion)
+        self.assertIn("Nearby traffic is unknown", report.suggestion)
+
+    def test_unverifiable_optional_metric_does_not_block_available_weather_recommendation(
+        self,
+    ) -> None:
+        c = capture("concern")
+        candidate = candidate_from_dict(json.loads(c["rows"]["candidates"][0]["contentJson"]))
+        unverified = replace(candidate.traffic_metrics[0], name="nearby_aircraft_change")
+        report = self.evaluate_capture(traffic_metrics=(*candidate.traffic_metrics, unverified))
+        self.assertEqual(report.outcome, "insufficient_data")
+        self.assertEqual(next(c.status for c in report.checks if c.name == "metrics"), "fail")
+        self.assertTrue(report.suggestion.startswith("Review weather-related flow pressure"))
+        self.assertIn(
+            "Supplemental traffic metrics not used: nearby_aircraft_change", report.limitations
+        )
+        self.assertNotIn("cannot be verified", report.suggestion)
+
+    def test_missing_metrics_still_uses_counts_recomputed_from_evidence(self) -> None:
+        report = self.evaluate_capture(traffic_metrics=())
+        self.assertEqual(report.outcome, "supported")
+        self.assertTrue(report.suggestion.startswith("Review weather-related flow pressure"))
+        self.assertIn("nearby aircraft within", report.suggestion)
+
+    def test_evidence_captured_after_window_start_remains_verifiable(self) -> None:
+        c = capture("concern")
+        candidate = candidate_from_dict(json.loads(c["rows"]["candidates"][0]["contentJson"]))
+        finding = json.loads(c["rows"]["findings"][0]["contentJson"])
+        source = c["snapshot"]["batches"][0]["payload"]["snapshot"]
+        after_start = (NOW + timedelta(seconds=1)).isoformat()
+        source["fetched_at_utc"] = after_start
+        for observation in source["observations"]:
+            observation["observed_at_utc"] = after_start
+        c["snapshot"]["cutoff_at_utc"] = (NOW + timedelta(seconds=2)).isoformat()
+        report = evaluate(candidate, c["snapshot"], finding, 1, NOW + timedelta(seconds=8))
+        self.assertEqual(report.outcome, "supported")
+        c["snapshot"]["cutoff_at_utc"] = NOW.isoformat()
+        report = evaluate(candidate, c["snapshot"], finding, 1, NOW + timedelta(seconds=8))
+        self.assertEqual(report.outcome, "insufficient_data")
 
     def test_correction_keeps_snapshot_and_rejects_invented_count(self) -> None:
         rows = capture("correction")["rows"]["reports"]
@@ -51,10 +151,10 @@ class ReportTests(TestCase):
             with self.subTest(outcome=outcome):
                 self.assertEqual(self.evaluate_capture(traffic_metrics=(metric,)).outcome, outcome)
         finding = json.loads(c["rows"]["findings"][0]["contentJson"])
-        self.assertEqual(
-            evaluate(candidate, c["snapshot"], finding, 1, NOW + timedelta(minutes=10)).outcome,
-            "insufficient_data",
-        )
+        expired = evaluate(candidate, c["snapshot"], finding, 1, NOW + timedelta(minutes=10))
+        self.assertEqual(expired.outcome, "insufficient_data")
+        self.assertTrue(expired.suggestion.startswith("Reassess this candidate"))
+        self.assertNotIn("..", expired.suggestion)
 
 
 class PersistenceTests(IsolatedAsyncioTestCase):

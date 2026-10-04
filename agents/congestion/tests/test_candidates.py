@@ -220,8 +220,10 @@ class NotActionableTests(TestCase):
     def test_growing_nearby_traffic_triggers_a_notice(self) -> None:
         c = build_candidate(make(None, response=None, nearby=nearby(12), previous_nearby=nearby(5)))
         self.assertEqual(c.status, CandidateStatus.INFORMATION_ONLY)
-        change = next(m for m in c.traffic_metrics if m.name == "nearby_aircraft_change")
-        self.assertEqual(change.value, 7)
+        self.assertFalse(any(m.name == "nearby_aircraft_change" for m in c.traffic_metrics))
+        self.assertEqual(
+            next(m.value for m in c.traffic_metrics if m.name == "nearby_aircraft_total"), 12
+        )
 
     def test_nothing_usable_is_insufficient_data_naming_what_is_missing(self) -> None:
         c = build_candidate(

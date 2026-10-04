@@ -13,6 +13,7 @@
   align-items: center;
   gap: 32px;
   min-height: 86px;
+  padding: 16px 0;
   border-bottom: 1px solid #283044;
 }
 .mission-brand {
@@ -116,7 +117,8 @@
 }
 .mission-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(460px, 1fr);
+  grid-template-columns: minmax(0, 3fr) minmax(360px, 2fr);
+  align-items: start;
   gap: 20px;
 }
 .mission-map-panel,
@@ -132,6 +134,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  flex-wrap: wrap;
 }
 .mission-panel-heading h2 {
   font-size: 20px;
@@ -144,7 +147,7 @@
 }
 .mission-stats {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   padding: 2px 22px 20px;
   gap: 16px;
 }
@@ -164,13 +167,22 @@
   color: #8b9bb4;
 }
 .mission-map {
-  height: 370px;
+  height: auto;
   position: relative;
   background: #0b1420;
 }
 .mission-map > div {
-  height: 100%;
+  height: auto;
   min-height: 0;
+}
+.mission .geographic-map {
+  height: clamp(440px, 60dvh, 720px);
+  min-height: 0;
+  flex: none;
+}
+.mission .map-toolbar {
+  padding: 12px 16px;
+  margin-bottom: 0;
 }
 .mission-map-caption {
   padding: 13px 20px;
@@ -200,6 +212,7 @@
 }
 .mission-context > div {
   display: flex;
+  flex-wrap: wrap;
   gap: 26px;
   margin: 15px 0;
 }
@@ -319,10 +332,73 @@
   letter-spacing: 0.5px;
 }
 .exchange-log {
-  height: 235px;
+  max-height: min(520px, 65dvh);
   overflow: auto;
   scrollbar-color: #35415a transparent;
   padding: 8px 18px;
+}
+.advice-item {
+  border: 1px solid #35415a;
+  border-radius: 9px;
+  overflow: hidden;
+}
+.advice-item .advice-card {
+  border: 0;
+  border-radius: 0;
+}
+.recommendation-review {
+  padding: 0 18px 15px;
+}
+.review-buttons {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.review-buttons button {
+  min-height: 42px;
+  flex: 1;
+  font-weight: 650;
+  border-radius: 6px;
+}
+.review-approve {
+  color: #c9f8df;
+  background: #17382b;
+  border: 1px solid #69b994;
+}
+.review-disapprove {
+  color: #ffdfdf;
+  background: #392328;
+  border: 1px solid #c27f88;
+}
+.review-buttons button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.review-buttons button:focus-visible {
+  outline: 2px solid #e9eff8;
+  outline-offset: 3px;
+}
+.recommendation-review [role='status'] {
+  display: block;
+  margin-top: 8px;
+  color: #b8c9df;
+  font-size: 12px;
+}
+.recommendation-review [role='alert'] {
+  margin-top: 8px;
+  color: #ffd4d4;
+}
+.message-details {
+  margin-top: 7px;
+  color: #91a1bb;
+  font-size: 11px;
+}
+.message-details summary {
+  cursor: pointer;
+}
+.message-details li {
+  margin-top: 5px;
+  overflow-wrap: anywhere;
 }
 .exchange-message {
   display: flex;
@@ -368,9 +444,11 @@
   line-height: 1.7;
   color: #c6d1e3;
   margin-top: 6px;
+  overflow-wrap: anywhere;
 }
 .message-body footer {
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
   align-items: center;
   justify-content: space-between;
@@ -526,13 +604,82 @@
   justify-content: flex-end;
 }
 .evidence-drawer {
-  width: min(560px, 100%);
+  width: min(680px, 100%);
   height: 100%;
   padding: 26px;
   background: #111b2b;
   border-left: 1px solid #425373;
   overflow: auto;
   box-shadow: -20px 0 80px #0005;
+}
+.aircraft-recommendations {
+  padding: 0 18px 16px;
+}
+.aircraft-recommendations section {
+  margin-top: 10px;
+  padding: 12px;
+  border: 1px solid #34485b;
+  border-radius: 8px;
+  background: #121e2c;
+}
+.aircraft-recommendations section strong {
+  color: #8de0bc;
+}
+.aircraft-recommendations p {
+  margin: 7px 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.aircraft-recommendations small {
+  color: #a9bdd4;
+  line-height: 1.6;
+  display: block;
+}
+.readable-evidence-facts {
+  display: grid;
+  gap: 10px;
+  margin: 16px 0 24px;
+}
+.readable-evidence-facts .evidence-fact {
+  display: grid;
+  gap: 5px;
+  padding: 13px;
+  border: 1px solid #33425a;
+  border-radius: 8px;
+  background: #152337;
+}
+.readable-evidence-facts span {
+  color: #9db2ca;
+  font-size: 12px;
+}
+.readable-evidence-facts strong {
+  color: #edf5ff;
+  font-size: 15px;
+  font-weight: 550;
+}
+.evidence-aircraft-list {
+  display: grid;
+  gap: 9px;
+}
+.evidence-aircraft-list article {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid #33425a;
+  border-radius: 8px;
+}
+.evidence-aircraft-list strong {
+  color: #8de0bc;
+}
+.evidence-aircraft-list span {
+  margin-left: auto;
+  color: #b5c8df;
+  font-size: 12px;
+}
+.evidence-aircraft-list small {
+  flex-basis: 100%;
+  color: #a1b6d0;
 }
 .evidence-drawer header {
   display: flex;
@@ -630,11 +777,8 @@
     max-width: 1900px;
     margin: auto;
   }
-  .mission-map {
-    height: 480px;
-  }
-  .exchange-log {
-    height: 375px;
+  .mission .geographic-map {
+    height: clamp(560px, 65dvh, 820px);
   }
 }
 @media (max-width: 1100px) {
@@ -642,7 +786,7 @@
     padding: 0 18px;
   }
   .mission-grid {
-    grid-template-columns: minmax(0, 1fr) minmax(380px, 1fr);
+    grid-template-columns: minmax(0, 3fr) minmax(340px, 2fr);
     gap: 12px;
   }
   .mission-header {
@@ -660,11 +804,8 @@
   .mission-stats strong {
     font-size: 22px;
   }
-  .mission-map {
-    height: 380px;
-  }
 }
-@media (max-width: 800px) {
+@media (max-width: 960px) {
   .mission-grid {
     grid-template-columns: 1fr;
   }
@@ -684,14 +825,12 @@
   .mission-health .eyebrow {
     display: none;
   }
-  .mission-map {
-    height: 320px;
+  .mission .geographic-map {
+    height: clamp(360px, 55dvh, 560px);
   }
-  .mission-grid .mission-context {
-    display: none;
-  }
-  .exchange-log {
-    height: 330px;
+  .mission-health time {
+    width: 100%;
+    margin-left: 0;
   }
   .mission-footer {
     flex-direction: column;
@@ -721,6 +860,17 @@
 
 .mission .validation-checks small {
   display: none;
+}
+@media (max-width: 480px) {
+  .mission-stats {
+    gap: 8px;
+  }
+  .mission-stats > div {
+    padding-left: 10px;
+  }
+  .mission-stats strong {
+    font-size: clamp(16px, 5vw, 20px);
+  }
 }
 .mission .mission-map-caption {
   position: static;
@@ -834,6 +984,8 @@
 }
 .conversation-heading {
   display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
   justify-content: space-between;
   align-items: center;
   padding: 16px;

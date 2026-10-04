@@ -5,7 +5,7 @@ import json
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from unittest import IsolatedAsyncioTestCase
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from agents.congestion.feeds import stored_feeds
 from agents.congestion.metrics import nearby_traffic
@@ -61,6 +61,31 @@ class PersistenceTests(IsolatedAsyncioTestCase):
         candidate, ready = self.adapter.save_candidate.call_args.args
         self.assertEqual(candidate.envelope.snapshot_id, self.opening.snapshot_id)
         self.assertEqual(ready.assessment_round, 1)
+
+    async def test_refresh_starts_a_new_snapshot_after_one_minute(self) -> None:
+        self.adapter.create_snapshot.return_value = snapshot_fixture(NOW + timedelta(seconds=60))
+        await self.durable.cycle(NOW + timedelta(seconds=59))
+        self.adapter.create_snapshot.assert_awaited_once()
+        await self.durable.cycle(NOW + timedelta(seconds=60))
+        self.assertEqual(self.adapter.create_snapshot.await_count, 2)
+        self.assertTrue(self.adapter.create_snapshot.call_args.kwargs["align_window_to_cutoff"])
+
+    async def test_snapshot_clock_rejection_retries_the_identical_request_after_waiting(
+        self,
+    ) -> None:
+        for status in (400, 530):
+            self.adapter.create_snapshot.side_effect = [
+                SpacetimeError("request rejected", status),
+                self.snapshot,
+            ]
+            restarted = PersistentCongestionService(self.adapter)
+            with patch(
+                "agents.congestion.persistence.asyncio.sleep", new_callable=AsyncMock
+            ) as sleep:
+                await restarted.cycle(NOW)
+            attempts = self.adapter.create_snapshot.await_args_list[-2:]
+            self.assertEqual(attempts[0], attempts[1])
+            sleep.assert_awaited_once_with(1)
 
     async def test_restart_reloads_outbox_and_closes_volatile_assessments(self) -> None:
         await self.durable.advance(NOW + timedelta(seconds=4), self.send)
@@ -191,3 +216,25 @@ class PersistenceTests(IsolatedAsyncioTestCase):
         self.assertEqual(candidate.window_start_utc, NOW)
         self.assertEqual(candidate.window_end_utc, NOW + timedelta(minutes=15))
         self.assertIsNone(candidate.projection_id)
+
+    async def test_snapshot_cutoff_can_follow_planning_window_without_losing_traffic(self) -> None:
+        raw = snapshot_fixture(NOW + timedelta(seconds=1), faa=False)
+        raw["window_start_utc"] = NOW.isoformat()
+        raw["window_end_utc"] = (NOW + timedelta(minutes=15)).isoformat()
+        raw["cutoff_at_utc"] = (NOW + timedelta(seconds=2)).isoformat()
+        service = CongestionService()
+        opening = service.start_cycle(stored_feeds(raw), NOW + timedelta(seconds=2))
+        request = service.on_assessment_request(
+            validation_request(opening), NOW + timedelta(seconds=3)
+        )
+        service.on_weather_reply(
+            weather_reply(request.envelope.message_id, opening, NOW + timedelta(seconds=4)),
+            "no_material_impact",
+            "TEST-weather",
+            NOW + timedelta(seconds=4),
+        )
+        (ready,) = service.advance(NOW + timedelta(seconds=5)).ready
+        candidate = service.candidates[ready.candidate_id]
+        metric = next(m for m in candidate.traffic_metrics if m.name == "nearby_aircraft_total")
+        self.assertEqual(metric.value, 1)
+        self.assertEqual(candidate.window_start_utc, NOW)

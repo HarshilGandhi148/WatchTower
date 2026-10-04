@@ -3,13 +3,23 @@
 import asyncio
 import io
 import json
+import tempfile
 from datetime import UTC, datetime, timedelta
 from email.message import Message
+from pathlib import Path
 from unittest import IsolatedAsyncioTestCase, TestCase
 from unittest.mock import AsyncMock, MagicMock, patch
 from urllib.error import HTTPError
 
-from data.ingestion import MAX_BODY, FeedError, IngestionConfig, IngestionService, http_get
+from data.ingestion import (
+    MAX_BODY,
+    FeedError,
+    IngestionConfig,
+    IngestionService,
+    http_get,
+    main,
+    read_environment,
+)
 from shared.spacetimedb_adapter import SpacetimeAdapter, SpacetimeError
 
 NOW = datetime(2026, 10, 4, 12, tzinfo=UTC)
@@ -81,6 +91,13 @@ class PollingTests(IsolatedAsyncioTestCase):
         self.assertEqual(first, self.adapter.call.call_args.args)
         self.get.assert_called_once()
 
+    async def test_failed_commit_logs_category_without_private_details(self) -> None:
+        self.adapter.call.side_effect = SpacetimeError("TEST-private-token-and-response")
+        with self.assertLogs("watchtower.ingestion", level="WARNING") as logs:
+            self.assertFalse(await self.service.poll("adsb_lol"))
+        self.assertIn("database commit", logs.output[0])
+        self.assertNotIn("TEST-private", " ".join(logs.output))
+
     async def test_malformed_and_oversized_inputs_are_not_empty_successes(self) -> None:
         self.get.side_effect = None
         for body in (b"{}", b"<html>error</html>", b"not json"):
@@ -110,6 +127,66 @@ class PollingTests(IsolatedAsyncioTestCase):
         await asyncio.gather(*(self.service.poll("adsb_lol") for _ in range(4)))
         self.adapter.call.assert_awaited_once()
         self.get.assert_called_once()
+
+
+class LaunchTests(TestCase):
+    def test_explicit_file_process_precedence_and_no_shell_expansion(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / ".env"
+            path.write_text(
+                "\ufeff# TEST only\nSPACETIMEDB_DATABASE=watchtower-test\n"
+                'SPACETIMEDB_INGEST_TOKEN="TEST-$UNCHANGED"\n'
+                "WEATHER_AGENT_SEED=TEST-not-for-ingestion\n",
+                encoding="utf-8",
+            )
+            values = read_environment(path, {"SPACETIMEDB_DATABASE": "watchtower-other"})
+        self.assertEqual(values["SPACETIMEDB_DATABASE"], "watchtower-other")
+        self.assertEqual(values["SPACETIMEDB_INGEST_TOKEN"], "TEST-$UNCHANGED")
+        self.assertNotIn("WEATHER_AGENT_SEED", values)
+        self.assertEqual(read_environment(None, {}), {})
+
+    def test_selected_provider_and_application_identifier_reach_service(self) -> None:
+        environment = {
+            "SPACETIMEDB_HTTP_URL": "http://127.0.0.1:3000",
+            "SPACETIMEDB_DATABASE": "watchtower-test",
+            "SPACETIMEDB_INGEST_TOKEN": "TEST-token",
+            "DATA_USER_AGENT": "<team-placeholder>",
+        }
+        service = MagicMock()
+        service.run_provider = AsyncMock()
+        with (
+            patch("data.ingestion.os.environ", environment),
+            patch("data.ingestion.IngestionService", return_value=service) as factory,
+        ):
+            main(["--provider", "adsb_lol", "--user-agent", "TEST application"])
+        service.run_provider.assert_awaited_once_with("adsb_lol")
+        self.assertEqual(factory.call_args.args[1].user_agent, "TEST application")
+
+    def test_invalid_and_nonlive_settings_fail_without_printing_secrets(self) -> None:
+        for values in (
+            {"SPACETIMEDB_INGEST_TOKEN": "TEST-secret-token"},
+            {"APP_MODE": "test", "SPACETIMEDB_INGEST_TOKEN": "TEST-secret-token"},
+        ):
+            with (
+                self.subTest(values=values),
+                patch("data.ingestion.os.environ", values),
+                patch("sys.stderr", new_callable=io.StringIO) as errors,
+                self.assertRaises(SystemExit),
+            ):
+                main([])
+            self.assertNotIn("TEST-secret-token", errors.getvalue())
+
+    def test_malformed_environment_file_fails_without_echoing_content(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / ".env"
+            path.write_text("TEST-secret-content-without-an-assignment\n", encoding="utf-8")
+            with (
+                patch("data.ingestion.os.environ", {}),
+                patch("sys.stderr", new_callable=io.StringIO) as errors,
+                self.assertRaises(SystemExit),
+            ):
+                main(["--env-file", str(path)])
+            self.assertNotIn("TEST-secret-content", errors.getvalue())
 
 
 class HttpTests(TestCase):

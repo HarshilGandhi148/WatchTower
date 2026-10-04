@@ -20,6 +20,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 from uuid import uuid4
 
+from data.ingestion import IngestionConfig, IngestionService
 from shared.contracts import AircraftBatch, SourceFailure
 from shared.settings import SpacetimeSettings
 from shared.spacetimedb_adapter import SpacetimeAdapter, SpacetimeError, payload_json
@@ -188,6 +189,18 @@ async def exercise(origin: str, database: str, temp: Path) -> None:
         deny(lambda: reducer("ingest_aircraft_batch", [json.dumps(raw)], ingest["token"]))
         assert await adapter.read_observations("aircraft_observations") == positions
 
+        # The normalized observation endpoint must also accept age-only refreshes.
+        refreshed_batch = replace(
+            batch,
+            fetched_at_utc=at + timedelta(seconds=4),
+            observations=(replace(batch.observations[0], position_age_s=4),),
+        )
+        await adapter.ingest_aircraft_batch(refreshed_batch)
+        refreshed_positions = await adapter.read_observations("aircraft_observations")
+        assert refreshed_positions[0]["observed_at_utc"] == at
+        assert refreshed_positions[0]["fetched_at_utc"] == refreshed_batch.fetched_at_utc
+        assert refreshed_positions[0]["position_age_s"] == 4
+
         failure = SourceFailure(
             provider="awc", source_ref=record.source_ref, fetched_at_utc=at + timedelta(seconds=3)
         )
@@ -214,6 +227,41 @@ async def exercise(origin: str, database: str, temp: Path) -> None:
         both("weather", speed=20)
         assert (await adapter.read_observations("weather_records"))[0]["wind_speed_kt"] == 20
         assert len(await viewer_adapter.read_observations("weather_records")) == 1
+        # Real reducer regression: an unchanged position acquires more provider age
+        # on the next poll. Both normalized batches must commit successfully.
+        fetched = at + timedelta(seconds=6)
+        age = 10
+
+        def feed_response(url: str, user_agent: str) -> bytes:
+            return json.dumps(
+                {
+                    "now": fetched.timestamp(),
+                    "total": 1,
+                    "ac": [
+                        {
+                            "hex": "abc123",
+                            "lat": 42.2,
+                            "lon": -83.3,
+                            "seen_pos": age,
+                            "alt_baro": 3000,
+                            "gs": 100,
+                            "track": 90,
+                        }
+                    ],
+                }
+            ).encode()
+
+        polling = IngestionService(
+            adapter, IngestionConfig(), get=feed_response, clock=lambda: fetched
+        )
+        assert await polling.poll("adsb_lol"), "First normalized position did not commit"
+        fetched += timedelta(seconds=10)
+        age = 20
+        assert await polling.poll("adsb_lol"), "Unchanged position incorrectly conflicted"
+        retained = await adapter.read_observations("aircraft_observations")
+        position = next(row for row in retained if row["aircraft_id"] == "abc123")
+        assert position["observed_at_utc"] == at - timedelta(seconds=4)
+        assert position["position_age_s"] == 20
         reducer("set_ingestion_permission", [ingest["identity"], False], admin["token"])
         deny(
             lambda: reducer(
@@ -330,8 +378,8 @@ def main() -> None:
     print(
         "PASS: real SpacetimeDB publish, Python writes/reads, two subscriptions, "
         "authorization, rollback, snapshots, durable candidates, correction, receipt, recovery, "
-        "projection isolation, concurrent updates and TS/Python bridge restart recovery "
-        "(TEST database; TEST weather availability handler)."
+        "real three-specialist stored handoff, projection isolation, concurrent updates and "
+        "TS/Python bridge restart recovery (TEST database; TEST in-process message delivery)."
     )
 
 

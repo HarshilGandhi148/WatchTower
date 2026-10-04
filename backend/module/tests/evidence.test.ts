@@ -23,7 +23,13 @@ import {
   expire_deliveries,
   record_candidate_receipt,
   prune_live_observations,
+  ingest_feed_batch,
+  create_evidence_snapshot,
 } from '../src/reducers/evidence';
+import {
+  ingest_aircraft_batch,
+  ingest_weather_record,
+} from '../src/reducers/ingestion';
 
 const at = '2026-10-04T12:00:00.000Z';
 const now = Date.parse(at);
@@ -77,6 +83,10 @@ function table(key: string, entries: Row[] = []) {
   return {
     [key]: index,
     iter: () => rows.values(),
+    insert: (row: Row) => {
+      rows.set(row[key], row);
+      return row;
+    },
     rows,
     status: {
       filter: (status: unknown) =>
@@ -105,11 +115,230 @@ function context(role: string, millis = now) {
       aircraftObservations: table('aircraftId'),
       feedBatches: table('batchId'),
       latestFeeds: table('provider'),
+      sourceHealth: table('provider'),
+      weatherRecords: table('provider'),
+      evidenceRecords: table('evidenceId'),
+      flightRecords: table('batchId'),
+      ingestEvent: table('eventKey'),
     },
   };
 }
 
 describe('stored feed validation', () => {
+  it('refreshes retained weather and freezes forecast evidence with an aligned live window', () => {
+    const ctx = context('ingestion', now + 2000);
+    const payload = {
+      schema_version: 1,
+      data_mode: 'live',
+      provider: 'awc',
+      airport_icao: 'KDTW',
+      record_type: 'METAR',
+      source_ref: 'https://example.test/metar',
+      observed_at_utc: at,
+      fetched_at_utc: at,
+      wind_direction_deg: 180,
+      wind_speed_kt: 5,
+      wind_gust_kt: null,
+      visibility_m: null,
+      ceiling_ft: null,
+    };
+    invoke(ingest_weather_record, ctx, {
+      payloadJson: JSON.stringify(payload),
+    });
+    const fetched = new Date(now + 1000).toISOString();
+    const taf = {
+      evidence_id: 'TEST-taf',
+      airport_icao: 'KDTW',
+      issued_at_utc: at,
+      fetched_at_utc: at,
+      source_ref: 'https://example.test/taf',
+      raw_text: 'TEST TAF',
+      start_utc: at,
+      end_utc: new Date(now + 86400000).toISOString(),
+      groups: [],
+      amendment: 'original',
+      temperatures: [],
+    };
+    const full = {
+      ...payload,
+      fetched_at_utc: fetched,
+      metar_evidence: {
+        evidence_id: 'TEST-metar',
+        airport_icao: 'KDTW',
+        observed_at_utc: at,
+        fetched_at_utc: fetched,
+        source_ref: payload.source_ref,
+        raw_text: 'TEST METAR',
+        conditions: {
+          wind_direction_deg: 180,
+          wind_speed_kt: 5,
+          wind_gust_kt: null,
+          visibility_m: 16093.44,
+          visibility_bound: 'greater_than',
+          ceiling_ft: null,
+        },
+      },
+      taf_evidence: [taf],
+    };
+    invoke(ingest_weather_record, ctx, { payloadJson: JSON.stringify(full) });
+    const weather = ctx.db.weatherRecords.provider.find('awc')!;
+    expect(weather.fetchedAtUtc).toEqual(stamp(now + 1000));
+    const db = {
+      ...ctx.db,
+      evidenceSnapshots: {
+        ...ctx.db.evidenceSnapshots,
+        caseId: { find: () => undefined },
+      },
+    };
+    const request = {
+      snapshot_id: 'TEST-live-window',
+      case_id: 'TEST-case',
+      configuration,
+      window_start_utc: at,
+      window_end_utc: new Date(now + 900000).toISOString(),
+      expires_at_utc: new Date(now + 120000).toISOString(),
+      align_window_to_cutoff: true,
+    };
+    const frozen = { ...ctx, db, sender: 'TEST-identity' };
+    db.servicePermissions.identity.update({
+      identity: 'TEST-identity',
+      role: 'congestion',
+    });
+    expect(() =>
+      invoke(
+        create_evidence_snapshot,
+        { ...frozen, timestamp: stamp(now + 500) },
+        { payloadJson: JSON.stringify(request) },
+      ),
+    ).toThrow('snapshot clock');
+    expect(db.evidenceSnapshots.rows.size).toBe(0);
+    invoke(create_evidence_snapshot, frozen, {
+      payloadJson: JSON.stringify(request),
+    });
+    const saved = db.evidenceSnapshots.snapshotId.find(request.snapshot_id)!;
+    const content = JSON.parse(saved.contentJson as string);
+    expect(content.window_start_utc).toEqual(content.cutoff_at_utc);
+    expect(
+      Date.parse(content.window_end_utc) - Date.parse(content.window_start_utc),
+    ).toBe(900000);
+    expect(content.evidence_ids).toContain(
+      'TEST-live-window:weather:awc:taf:0',
+    );
+    expect(
+      JSON.parse(
+        db.evidenceRecords.evidenceId.find(
+          'TEST-live-window:weather:awc:taf:0',
+        )!.contentJson as string,
+      ),
+    ).toEqual(taf);
+    invoke(create_evidence_snapshot, frozen, {
+      payloadJson: JSON.stringify(request),
+    });
+    expect(db.evidenceSnapshots.rows.size).toBe(1);
+  });
+  it('refreshes the observation endpoint when position time is unchanged', () => {
+    const ctx = context('ingestion', now + 10_000);
+    const observation = {
+      aircraft_id: 'abc123',
+      observed_at_utc: new Date(now - 10_000).toISOString(),
+      latitude_deg: 42.2,
+      longitude_deg: -83.3,
+      position_age_s: 10,
+      altitude_ft: null,
+      speed_kt: null,
+      track_deg: null,
+      on_ground: false,
+    };
+    const first = {
+      schema_version: 1,
+      data_mode: 'live',
+      provider: 'adsb_lol',
+      fetched_at_utc: at,
+      source_ref: 'https://example.test',
+      observations: [observation],
+    };
+    invoke(ingest_aircraft_batch, ctx, { payloadJson: JSON.stringify(first) });
+    const next = {
+      ...first,
+      fetched_at_utc: new Date(now + 10_000).toISOString(),
+      observations: [{ ...observation, position_age_s: 20 }],
+    };
+    invoke(ingest_aircraft_batch, ctx, { payloadJson: JSON.stringify(next) });
+    const row = ctx.db.aircraftObservations.rows.get('abc123')!;
+    expect((row.observedAtUtc as Timestamp).toMillis()).toBe(
+      BigInt(now - 10_000),
+    );
+    expect((row.fetchedAtUtc as Timestamp).toMillis()).toBe(
+      BigInt(now + 10_000),
+    );
+    expect(row.positionAgeS).toBe(20);
+    expect(() =>
+      invoke(ingest_aircraft_batch, ctx, {
+        payloadJson: JSON.stringify({
+          ...next,
+          observations: [{ ...observation, position_age_s: 21 }],
+        }),
+      }),
+    ).toThrow('Conflicting equal-time observation');
+  });
+
+  it('refreshes a repeated position without treating increasing provider age as a conflict', () => {
+    const ctx = context('ingestion', now + 10_000);
+    const positionAt = new Date(now - 10_000).toISOString();
+    const observation = {
+      aircraft_id: 'abc123',
+      callsign: 'TEST',
+      latitude_deg: 42.2,
+      longitude_deg: -83.3,
+      altitude_ft: 1000,
+      on_ground: false,
+      ground_speed_kt: 100,
+      track_deg: 90,
+      position_age_s: 10,
+      observed_at_utc: positionAt,
+      provider_time_utc: at,
+      fetched_at_utc: at,
+      missing_fields: [],
+      quality_flags: [],
+    };
+    const first = {
+      ...adsb,
+      snapshot: {
+        ...adsb.snapshot,
+        reported_total: 1,
+        observations: [observation],
+      },
+    };
+    invoke(ingest_feed_batch, ctx, { payloadJson: JSON.stringify(first) });
+    const nextAt = new Date(now + 10_000).toISOString();
+    const next = {
+      ...first,
+      batch_id: 'TEST-next-batch',
+      snapshot: {
+        ...first.snapshot,
+        provider_time_utc: nextAt,
+        fetched_at_utc: nextAt,
+        observations: [
+          {
+            ...observation,
+            position_age_s: 20,
+            provider_time_utc: nextAt,
+            fetched_at_utc: nextAt,
+          },
+        ],
+      },
+    };
+    invoke(ingest_feed_batch, ctx, { payloadJson: JSON.stringify(next) });
+    const row = ctx.db.aircraftObservations.rows.get('abc123')!;
+    expect((row.observedAtUtc as Timestamp).toMillis()).toBe(
+      BigInt(now - 10_000),
+    );
+    expect((row.fetchedAtUtc as Timestamp).toMillis()).toBe(
+      BigInt(now + 10_000),
+    );
+    expect(row.positionAgeS).toBe(20);
+    expect(ctx.db.feedBatches.rows.size).toBe(2);
+  });
   it('keeps empty success and unparsed source time/rejections distinct', () => {
     expect(feed(JSON.stringify(adsb), now).snapshot.observations).toEqual([]);
     expect(

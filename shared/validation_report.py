@@ -9,6 +9,19 @@ ReportOutcome = Literal["supported", "insufficient_data", "rejected"]
 
 
 @dataclass(frozen=True, slots=True)
+class AircraftRecommendation:
+    aircraft_id: str
+    label: str
+    recommendation: str
+    prediction: str
+    evidence_id: str
+    observed_at_utc: datetime
+    forecast_at_utc: datetime | None
+    projected_latitude_deg: float | None
+    projected_longitude_deg: float | None
+
+
+@dataclass(frozen=True, slots=True)
 class ValidationCheck:
     name: str
     status: CheckStatus
@@ -30,3 +43,5 @@ class ValidationReport:
     suggestion: str
     limitations: tuple[str, ...]
     schema_version: int = 1
+    recommendation_kind: Literal["demo", "monitoring"] = "monitoring"
+    aircraft_recommendations: tuple[AircraftRecommendation, ...] = ()

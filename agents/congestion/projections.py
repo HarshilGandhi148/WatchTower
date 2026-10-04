@@ -115,11 +115,16 @@ def prepare_projection(
 
     records, fetched = feeds.demand_records, feeds.demand_fetched_at_utc
     if feeds.demand_gate_times:
-        backlog = departure_backlog(records, fetched, start)
+        backlog = departure_backlog(records, fetched, start, evidence_time_utc=feeds.cutoff_at_utc)
         if backlog.upstream_waiting is None or backlog.runway_queue is None:
             return None
         demand = demand_windows(
-            records, fetched, start, horizon, exclude_flight_ids=backlog.flight_ids
+            records,
+            fetched,
+            start,
+            horizon,
+            exclude_flight_ids=backlog.flight_ids,
+            evidence_time_utc=feeds.cutoff_at_utc,
         )
         if demand.windows is None:
             return None
@@ -130,7 +135,9 @@ def prepare_projection(
             OBSERVED_BACKLOG_NOTE,
         )
     elif settings.backlog_upstream is not None and settings.backlog_runway_queue is not None:
-        demand = demand_windows(records, fetched, start, horizon)
+        demand = demand_windows(
+            records, fetched, start, horizon, evidence_time_utc=feeds.cutoff_at_utc
+        )
         if demand.windows is None:
             return None  # missing or stale stored demand: unknown, not zero
         upstream, queue, note = (

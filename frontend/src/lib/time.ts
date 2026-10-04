@@ -35,9 +35,17 @@ export function aircraftFreshness(
   positionAgeS: number | undefined,
   now: number,
 ): 'fresh' | 'aging' | 'stale' | 'excluded' | 'unknown' {
-  if (positionAgeS === undefined) return 'unknown';
-  const age =
-    Math.max(0, (now - Number(observed.toMillis())) / 1000) + positionAgeS;
+  const elapsed = (now - Number(observed.toMillis())) / 1000;
+  if (
+    positionAgeS === undefined ||
+    !Number.isFinite(positionAgeS) ||
+    positionAgeS < 0 ||
+    !Number.isFinite(elapsed) ||
+    elapsed < 0
+  )
+    return 'unknown';
+  // observed is the normalized position time, already adjusted for seen_pos by ingestion.
+  const age = elapsed;
   if (age > 120) return 'excluded';
   if (age > 60) return 'stale';
   return age <= 30 ? 'fresh' : 'aging';
@@ -47,7 +55,8 @@ export function metarFreshness(
   observed: Timestamp,
   now: number,
 ): 'current' | 'limited' {
-  return now - Number(observed.toMillis()) > 90 * 60_000
+  const age = now - Number(observed.toMillis());
+  return !Number.isFinite(age) || age < 0 || age > 90 * 60_000
     ? 'limited'
     : 'current';
 }

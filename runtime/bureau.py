@@ -3,6 +3,9 @@
 from collections.abc import Mapping
 
 from uagents import Agent, Bureau
+from uagents_core.identity import Identity
+from uagents_core.registration import BatchRegistrationPolicy
+from uagents_core.types import AgentInfo
 
 from agents.validation.orchestrator import Orchestrator
 from agents.validation.protocol import PersistOutcome, ValidateCandidate, register_orchestration
@@ -10,8 +13,22 @@ from agents.validation.storage import ValidationStorage
 from shared.contracts import AgentName
 
 
+class LocalRegistration(BatchRegistrationPolicy):
+    """Local specialist delivery needs no public Almanac or ledger registration."""
+
+    async def register(self) -> None:
+        pass
+
+    def add_agent(self, agent_info: AgentInfo, identity: Identity) -> None:
+        pass
+
+
 def build_bureau(
-    agents: Mapping[AgentName, Agent], *, port: int = 8000, endpoint: str | None = None
+    agents: Mapping[AgentName, Agent],
+    *,
+    port: int = 8000,
+    endpoint: str | None = None,
+    local_only: bool = False,
 ) -> Bureau:
     """Run prepared specialists and the validation coordinator in one Bureau.
 
@@ -28,6 +45,7 @@ def build_bureau(
         agents=[agents[role] for role in AgentName],
         port=port,
         endpoint=endpoint,
+        registration_policy=LocalRegistration() if local_only else None,
     )
 
 

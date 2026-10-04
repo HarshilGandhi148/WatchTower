@@ -129,11 +129,22 @@ export const ingest_feed_batch = database.reducer(
         for (const key of Object.keys(fields) as (keyof typeof fields)[])
           if (fields[key] === null) delete fields[key];
         const contentJson = json([input.value.source_ref, fields]);
+        // Repeated polls can have the same position time but a newer seen_pos,
+        // fetch time or other telemetry. Order those refreshes by fetch time.
+        const samePositionTime =
+          previous && observed === Number(previous.observedAtUtc.toMillis());
         if (
           !shouldReplace(
-            previous ? Number(previous.observedAtUtc.toMillis()) : undefined,
+            previous
+              ? Number(
+                  (samePositionTime
+                    ? previous.fetchedAtUtc
+                    : previous.observedAtUtc
+                  ).toMillis(),
+                )
+              : undefined,
             previous?.contentJson,
-            observed,
+            samePositionTime ? input.fetched : observed,
             contentJson,
           )
         )
@@ -265,13 +276,17 @@ export const create_evidence_snapshot = database.reducer(
   { payloadJson: t.string() },
   (ctx, { payloadJson }) => {
     auth(ctx, 'congestion');
-    const v = object(parse(payloadJson), [
+    const input = parse(payloadJson);
+    const v = object(input, [
       'snapshot_id',
       'case_id',
       'configuration',
       'window_start_utc',
       'window_end_utc',
       'expires_at_utc',
+      ...(Object.hasOwn(input, 'align_window_to_cutoff')
+        ? ['align_window_to_cutoff']
+        : []),
     ]);
     const id = text(v.snapshot_id),
       caseId = text(v.case_id),
@@ -285,7 +300,7 @@ export const create_evidence_snapshot = database.reducer(
       end - start > 1800000 ||
       expires <= now(ctx) ||
       expires <= start ||
-      expires - start > 120000
+      expires - start > 600000
     )
       throw new Error('Invalid snapshot window/expiry');
     const requestJson = json(v),
@@ -297,6 +312,24 @@ export const create_evidence_snapshot = database.reducer(
     }
     if (ctx.db.evidenceSnapshots.caseId.find(caseId))
       throw new Error('Case already has a snapshot');
+    if (
+      v.align_window_to_cutoff !== undefined &&
+      typeof v.align_window_to_cutoff !== 'boolean'
+    )
+      throw new Error('Invalid window alignment');
+    const cutoff = now(ctx);
+    const actualStart = v.align_window_to_cutoff ? cutoff : start;
+    const actualEnd = actualStart + end - start;
+    const actualExpiry = actualStart + expires - start;
+    if (
+      v.align_window_to_cutoff &&
+      Array.from(ctx.db.weatherRecords.iter()).some(
+        (row) => Number(row.fetchedAtUtc.toMillis()) > cutoff,
+      )
+    )
+      throw new Error(
+        'Weather fetch is ahead of the snapshot clock; retry shortly',
+      );
     const batches: JsonObject[] = [],
       evidenceIds: string[] = [],
       limitations: string[] = [];
@@ -326,6 +359,10 @@ export const create_evidence_snapshot = database.reducer(
           evidenceIds.push(eventId);
         }
       const fetched = Number(batch.fetchedAtUtc.toMillis());
+      if (v.align_window_to_cutoff && fetched > cutoff)
+        throw new Error(
+          'Feed fetch is ahead of the snapshot clock; retry shortly',
+        );
       if (now(ctx) - fetched > (provider === 'adsb_lol' ? 60000 : 300000))
         limitations.push(`${provider}: stale batch`);
       if (
@@ -373,6 +410,16 @@ export const create_evidence_snapshot = database.reducer(
       weather.push(content);
       evidence(ctx, evidenceId, row.provider, json(content));
       evidenceIds.push(evidenceId);
+      const retained = JSON.parse(row.contentJson) as unknown[];
+      if (retained.length === 3) {
+        const bundle = record(retained[2]);
+        const tafs = bundle.taf_evidence as unknown[];
+        for (const [index, taf] of tafs.entries()) {
+          const tafId = `${evidenceId}:taf:${index}`;
+          evidence(ctx, tafId, row.provider, json(taf));
+          evidenceIds.push(tafId);
+        }
+      }
     }
     const healthRows = Array.from(ctx.db.sourceHealth.iter()).map((row) => ({
       provider: row.provider,
@@ -387,6 +434,9 @@ export const create_evidence_snapshot = database.reducer(
         limitations.push(`${provider}: unavailable health`);
     const contentJson = json({
       ...v,
+      window_start_utc: new Date(actualStart).toISOString(),
+      window_end_utc: new Date(actualEnd).toISOString(),
+      expires_at_utc: new Date(actualExpiry).toISOString(),
       cutoff_at_utc: ctx.timestamp.toDate().toISOString(),
       evidence_ids: evidenceIds,
       batches,
@@ -402,7 +452,7 @@ export const create_evidence_snapshot = database.reducer(
       caseId,
       airportIcao: 'KDTW',
       cutoffAtUtc: ctx.timestamp,
-      expiresAtUtc: stamp(expires),
+      expiresAtUtc: stamp(actualExpiry),
       requestJson,
       contentJson,
       closed: false,

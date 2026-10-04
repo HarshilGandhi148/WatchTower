@@ -17,6 +17,7 @@ import PruneLiveObservationsReducer from "../prune_live_observations_reducer";
 import RecordCandidateReceiptReducer from "../record_candidate_receipt_reducer";
 import RegisterAssessmentRequestReducer from "../register_assessment_request_reducer";
 import ReportSourceFailureReducer from "../report_source_failure_reducer";
+import ReviewRecommendationReducer from "../review_recommendation_reducer";
 import SeedAgentIdentityReducer from "../seed_agent_identity_reducer";
 import SetIngestionPermissionReducer from "../set_ingestion_permission_reducer";
 import SetServicePermissionReducer from "../set_service_permission_reducer";
@@ -40,6 +41,7 @@ export type PruneLiveObservationsParams = __Infer<typeof PruneLiveObservationsRe
 export type RecordCandidateReceiptParams = __Infer<typeof RecordCandidateReceiptReducer>;
 export type RegisterAssessmentRequestParams = __Infer<typeof RegisterAssessmentRequestReducer>;
 export type ReportSourceFailureParams = __Infer<typeof ReportSourceFailureReducer>;
+export type ReviewRecommendationParams = __Infer<typeof ReviewRecommendationReducer>;
 export type SeedAgentIdentityParams = __Infer<typeof SeedAgentIdentityReducer>;
 export type SetIngestionPermissionParams = __Infer<typeof SetIngestionPermissionReducer>;
 export type SetServicePermissionParams = __Infer<typeof SetServicePermissionReducer>;

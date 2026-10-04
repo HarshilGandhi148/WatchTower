@@ -76,6 +76,7 @@ export const set_service_permission = database.reducer(
 );
 
 export { store_validation_report } from './reducers/reports';
+export { review_recommendation } from './reducers/reviews';
 
 export {
   seed_agent_identity,

@@ -23,6 +23,7 @@ import {
 } from './tables/evidence';
 
 import { servicePermissions } from './auth/permissions';
+import { recommendationReviews } from './tables/reviews';
 import {
   aircraftObservations,
   sourceHealth,
@@ -37,6 +38,7 @@ export const database = schema({
   validationResult,
   servicePermissions,
   validationReports,
+  recommendationReviews,
   flightRecords,
   assessmentRequests,
   feedBatches,

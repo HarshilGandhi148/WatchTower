@@ -50,6 +50,20 @@ async def exercise_bridge(origin: str, temp: Path) -> None:
     }
     for role in ("ingestion", "weather", "congestion", "validation", "bridge"):
         await clients["admin"].call("seed_agent_identity", role, identities[role]["identity"])
+    # The separate stream allowlist must not override a revoked service permission.
+    await clients["admin"].call(
+        "set_ingestion_permission", identities["ingestion"]["identity"], False
+    )
+    deny(
+        lambda: request(
+            f"{origin}/v1/database/{database}/call/write_ingest_event",
+            json.dumps(["TEST-revoked", 0, '{"schema_version":1}']).encode(),
+            identities["ingestion"]["token"],
+        )
+    )
+    await clients["admin"].call(
+        "seed_agent_identity", "ingestion", identities["ingestion"]["identity"]
+    )
     # Every service token is denied on every other stream reducer, including bridge.
     reducers = {
         "ingestion": "write_ingest_event",
