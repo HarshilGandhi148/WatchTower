@@ -1,0 +1,1 @@
+"""Versioned weather explanation prompts."""

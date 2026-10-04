@@ -3,7 +3,9 @@
 AWC is weather-owned. ADS-B, FAA XML and optional AeroAPI are congestion-owned.
 Normalization, source health and polling/writes are integration-owned.
 
-All modules are placeholders. Implement P0 before optional providers. Test
+AWC and congestion-owned provider parsers are implemented; ingestion, shared
+normalization and health scheduling remain integration placeholders. See the
+[weather component handoff](../agents/weather/README.md). Implement P0 before optional providers. Test
 success, empty, malformed, unavailable, missing fields and out-of-order data.
 Provider response time, record observation/publication time and fetch success
 time remain separate. Use bounded timeouts/backoff and centralized caching.

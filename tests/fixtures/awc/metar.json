@@ -1,0 +1,15 @@
+[
+  {
+    "icaoId": "KDTW",
+    "obsTime": 1791090000,
+    "rawOb": "TEST KDTW METAR",
+    "wdir": 270,
+    "wspd": 8,
+    "wgst": null,
+    "visib": "10+",
+    "clouds": [{"cover": "CLR", "base": null}],
+    "wxString": null,
+    "temp": 12,
+    "dewp": 7
+  }
+]

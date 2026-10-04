@@ -8,8 +8,12 @@ to the immutable domain contract. SDK serializer compatibility is tested.
 Normalized observation DTOs, backend SpacetimeDB settings and the asynchronous
 HTTP adapter are implemented and tested. Settings read process environment;
 local .env loading is the responsibility of the application launcher.
-WeatherAssessment, FlowCandidate, ValidatedAdvisory and LLM interfaces remain pending. The routing messages carry
-references to those stored payloads; they do not implement the payload analyses.
+WeatherAssessment and FlowCandidate domain contracts are implemented. Weather adds
+immutable METAR/TAF evidence and snapshot contracts; see
+[weather proposal](../docs/weather-interface-proposal.md). Shared review and live
+persistence are pending. ValidatedAdvisory and the shared LLM interface remain
+pending; weather has its own replaceable explanation client. Routing messages carry
+references to stored payloads, not provider feeds.
 
 Review contract changes with producers and consumers. Do not import agent,
 provider, projection or runtime implementations here. Backend secrets are never

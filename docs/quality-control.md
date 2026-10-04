@@ -1,12 +1,34 @@
 # Quality control
 
+## Weather component verification boundary
+
+Weather now has AWC parsers, fixed-snapshot assessment, bounded ASI explanation
+selection, signed request handling and material-change intents. Its colocated
+tests exercise missing/stale data, conditional forecasts, malformed/model inputs,
+source injection, duplicates, concurrency and persistence failures. See
+[weather handoff](../agents/weather/README.md) and the
+[interface proposal](weather-interface-proposal.md).
+These component tests do not close the live provider, durable persistence,
+three-agent cycle or operational release gates below. Shared review and a
+credentialed ASI smoke test remain pending; verification results are recorded
+in the weather handoff after checks run.
+
+Optional read-only chat is registered on the same weather identity. Tests cover
+signed chat delivery, UTC acknowledgements, no persistence, scope restrictions,
+untrusted questions and concurrent/cache behavior. The standalone launcher starts
+the same weather identity with loopback inspector endpoints and on-demand AWC
+reads. Windows HTTP checks of `/agent_info` and `/messages` passed on October 4,
+2026. Remote mailbox/Agentverse connection remains unverified; chat does not close
+case or controller-decision release gates.
+
 There are two distinct gates: repository checks that exist now, and product
 acceptance checks that must be implemented as behavior arrives.
 
-The [October 4 repository review](repository-review.md) maps the current code to
-the technical plan. The review predates the congestion persistence integration documented below.
-Weather interpretation, advisory publication and controller authority remain incomplete;
-tested coordination and storage are not a completed operational agent system.
+The [October 4 repository review](repository-review.md) records the earlier
+foundation/scaffold state and predates the congestion persistence integration
+documented below. Weather, congestion and validation now have component
+implementations. Their tests do not establish a connected live three-agent system;
+advisory publication and controller authority retain the release gates below.
 
 ## Scaffold checks in CI
 

@@ -1,5 +1,11 @@
 # Repository review — October 4, 2026
 
+This review describes the checkout at review time. Subsequent weather and congestion
+component implementations have superseded parts of its inventory. The current
+[weather handoff](../agents/weather/README.md) records the weather delivery and
+its pending shared review and live integration; the historical findings below
+remain useful integration context, not a current component-completion report.
+
 ## Assessment
 
 The repository is a working observation foundation and frontend demonstration,
