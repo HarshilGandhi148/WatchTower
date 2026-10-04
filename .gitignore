@@ -34,3 +34,8 @@ test-results/
 .DS_Store
 .idea/
 *.log
+
+# Local contributor worktrees and dependency-directory symlinks
+.worktrees/
+/backend/module/node_modules
+/frontend/node_modules

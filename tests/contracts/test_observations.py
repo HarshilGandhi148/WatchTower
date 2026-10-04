@@ -166,7 +166,7 @@ class AdapterTests(IsolatedAsyncioTestCase):
 
         def transport(url, body, headers, timeout):
             self.assertTrue(url.endswith("/sql"))
-            self.assertEqual(body, b"SELECT * FROM weather_records LIMIT 1000")
+            self.assertEqual(body, b"SELECT * FROM weather_records LIMIT 1001")
             return json.dumps(result).encode()
 
         rows = await SpacetimeAdapter(self.settings, transport).read_observations("weather_records")
