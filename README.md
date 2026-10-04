@@ -51,13 +51,11 @@ WatchTower aims to make useful information easier for controllers to act on. If 
 
 ## Where the project stands
 
-WatchTower is a prototype. **None of the three AI agents is implemented yet.** The dashboard, a local backend for weather and aircraft observations, and some of the communication and coordination code are implemented. You can explore the review experience in a separate sample-data demo.
+WatchTower is a prototype. The dashboard, a local backend for weather and aircraft observations, and communication tools for the three agents are implemented. You can explore the review experience in a separate sample-data demo.
 
 The complete automatic workflow using real flight data is still being connected: live data collection, the weather and congestion agents' analysis, calculated previews, and the backend for controller decisions remain unfinished. The demo uses sample data and illustrative aircraft paths. WatchTower is not a certified air traffic control system.
 
-The current code and sample data are fixed to Detroit. Supporting another airport requires changes to the data checks, storage, and map as well as configuration.
-
-See the [technical plan](full_technical_plan.md), [repository review](docs/repository-review.md), and [remaining release checks](docs/quality-control.md) for details.
+See the [technical plan](full_technical_plan.md) and [remaining release checks](docs/quality-control.md) for details.
 
 ## How to use it
 
