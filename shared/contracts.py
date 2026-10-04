@@ -1,6 +1,7 @@
 """Initial cross-agent envelope and bounded catalog from technical plan section 6.
 
-Payload DTOs and uAgents serialization require a separate reviewed implementation.
+Agent assessment/advisory payload DTOs remain pending. Envelope serialization
+is implemented in shared/messages.py; observation DTOs are defined below.
 The declared sender role is structural information, not authentication.
 """
 

@@ -3,6 +3,10 @@
 There are two distinct gates: repository checks that exist now, and product
 acceptance checks that must be implemented as behavior arrives.
 
+The [October 4 repository review](repository-review.md) maps the current code to
+the technical plan. None of the three agent factories or domain implementations
+is complete; tested coordination helpers are not an implemented agent system.
+
 ## Scaffold checks in CI
 
 | Check | Enforced now |
@@ -65,6 +69,11 @@ behavior exists and has been verified. A scaffold test is not operational eviden
   unavailable metrics stay unavailable, no invented savings.
 - [ ] Live isolation: scenario parameters and projected entities cannot write or
   appear in provider observations or the agents' live evidence queries.
+- [ ] Frontend fixture isolation: production imports/re-exports of frontend TEST
+  helpers are rejected by automated checks, while test and demo entrypoints work.
+- [ ] Bounded observation retention and complete evidence reads: more than 1000
+  aircraft IDs cannot silently truncate the live evidence set; pruning preserves
+  referenced snapshots and frontend subscriptions remain bounded.
 - [ ] Reducers: wrong-role/unassigned callers denied, expired/superseded approval
   denied, two-controller races atomic, repeat request idempotent, edit revalidated.
 - [ ] Lifecycle: material changes invalidate pending versions; minor refreshes do

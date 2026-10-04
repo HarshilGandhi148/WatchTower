@@ -1,6 +1,7 @@
 # Fetch.ai orchestration
 
-The existing Validation / Coordinating Agent owns orchestration. Exactly three
+The Validation / Coordinating role owns the implemented orchestration helpers;
+its agent factory and domain checks are still placeholders. Exactly three
 uAgent identities remain: weather, congestion, validation. No extra seed, token,
 LLM router, or fourth workstream is introduced.
 
