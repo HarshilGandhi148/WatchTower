@@ -29,8 +29,33 @@ token belongs in browser configuration.
 
 Both assessment rounds use the snapshot's original analysis window. Restart closes
 unfinished assessments and resumes saved deliveries. No weather timeout is submitted
-without a stored finding. Departure metrics and projections remain unavailable without
-required airport demand and model inputs; paid polling remains disabled. Weather and
-validation domain implementations are still owner workstreams.
+without a stored finding. Paid polling remains disabled. Weather and validation domain
+implementations are still owner workstreams.
 
-See [setup and verification](../../docs/congestion-spacetime.md).
+## Projections from stored snapshots
+
+projections.py prepares one baseline-vs-proposal projection per snapshot when
+`DEPARTURE_CAPACITY_PER_HOUR` is set.
+
+- **Demand:** the snapshot's stored FlightAware batch only: confirmed, uncancelled
+  departures with a runway time, in five-minute buckets spread evenly per minute. The
+  batch must be at most 5 minutes old at the window start. Missing or stale demand gives
+  no projection, never zero-valued results.
+- **Backlog, observed:** when every stored record carries `gate_scheduled_utc` and
+  `gate_actual_utc`, the backlog comes from them. Pushed back = runway queue; past
+  scheduled gate-out = upstream. Those flights are excluded from demand so none is
+  counted twice.
+- **Backlog, operator fallback:** otherwise `DEPARTURE_BACKLOG_UPSTREAM` and
+  `DEPARTURE_BACKLOG_RUNWAY_QUEUE` (both or neither) are used, labelled "not observed",
+  and candidates citing the projection have limited quality. With neither, there is no
+  projection.
+- **Proposal:** release at the configured capacity for the whole horizon. The baseline
+  has no response.
+- **Persistence:** the payload (`projection_id = proj-<snapshot_id>`) is stored through
+  `adapter.store_projection` before the candidate that cites it. Retries resend the
+  identical payload. Validation recomputes it on retrieval.
+
+Today's database stores no gate times, and its projection check counts every departure
+as demand. Only the operator fallback is accepted until the gate-time proposal in
+docs/interfaces.md lands. FlightAware ingestion is also not scheduled yet, so live
+projections need stored FlightAware batches.

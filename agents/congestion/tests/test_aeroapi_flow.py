@@ -9,6 +9,7 @@ from agents.congestion.agent import AgentConfig
 from agents.congestion.candidates import flow_snapshot_from_demand, project
 from agents.congestion.feeds import FeedSnapshot
 from agents.congestion.metrics import demand_windows, departure_backlog
+from agents.congestion.projections import ProjectionSettings
 from agents.congestion.service import CongestionService
 from agents.congestion.tests.test_agent import ENV
 from data.flightaware import Endpoint, parse_flights
@@ -168,7 +169,24 @@ class ServiceWithFlightsTests(TestCase):
 
 
 class AgentConfigTests(TestCase):
-    def test_paid_settings_do_not_activate_polling_or_unstored_projections(self) -> None:
+    def test_paid_settings_do_not_activate_polling(self) -> None:
         default = AgentConfig.from_env(ENV)
-        configured = AgentConfig.from_env({**ENV, **AERO_ENV, "DEPARTURE_CAPACITY_PER_HOUR": "36"})
-        self.assertEqual(default, configured)
+        self.assertEqual(default, AgentConfig.from_env({**ENV, **AERO_ENV}))
+        self.assertIsNone(default.projection)
+
+    def test_projection_settings(self) -> None:
+        capacity = {"DEPARTURE_CAPACITY_PER_HOUR": "36"}
+        backlog = {"DEPARTURE_BACKLOG_UPSTREAM": "4", "DEPARTURE_BACKLOG_RUNWAY_QUEUE": "2"}
+        only_capacity = AgentConfig.from_env({**ENV, **capacity})
+        self.assertEqual(only_capacity.projection, ProjectionSettings(36))
+        with_fallback = AgentConfig.from_env({**ENV, **capacity, **backlog})
+        self.assertEqual(with_fallback.projection, ProjectionSettings(36, 4, 2))
+        for invalid in (
+            backlog,
+            {**capacity, "DEPARTURE_BACKLOG_UPSTREAM": "4"},
+            {**capacity, **backlog, "DEPARTURE_BACKLOG_RUNWAY_QUEUE": "two"},
+            {**capacity, "DEPARTURE_CAPACITY_PER_HOUR": "3"},
+            {**capacity, **backlog, "DEPARTURE_BACKLOG_UPSTREAM": "-1"},
+        ):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                AgentConfig.from_env({**ENV, **invalid})

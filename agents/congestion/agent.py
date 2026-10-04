@@ -24,7 +24,8 @@ from datetime import UTC, datetime
 from uagents import Agent, Context
 
 from agents.congestion.persistence import PersistentCongestionService
-from agents.congestion.service import ProtocolError
+from agents.congestion.projections import ProjectionSettings
+from agents.congestion.service import CongestionService, ProtocolError
 from shared.messages import (
     AssessmentRequestMessage,
     CandidateReadyMessage,
@@ -39,6 +40,11 @@ from shared.spacetimedb_adapter import SpacetimeAdapter, SpacetimeError
 
 AGENT_NAME = "congestion"
 ADVANCE_SECONDS = 2.0
+PROJECTION_SETTINGS = (
+    "DEPARTURE_CAPACITY_PER_HOUR",
+    "DEPARTURE_BACKLOG_UPSTREAM",
+    "DEPARTURE_BACKLOG_RUNWAY_QUEUE",
+)
 
 Handler = Callable[..., Awaitable[None]]
 
@@ -51,6 +57,7 @@ class AgentConfig:
     database: SpacetimeSettings
     airport: AirportConfig = AirportConfig()
     cycle_seconds: float = 60.0  # plan: assessment at most once per minute per case
+    projection: ProjectionSettings | None = None  # None = projections disabled
 
     @classmethod
     def from_env(cls, env: Mapping[str, str]) -> AgentConfig:
@@ -73,7 +80,30 @@ class AgentConfig:
             validation_address=env["VALIDATION_AGENT_ADDRESS"].strip(),
             database=SpacetimeSettings.from_env(env, role="congestion"),
             airport=airport,
+            projection=_projection_settings(env),
         )
+
+
+def _projection_settings(env: Mapping[str, str]) -> ProjectionSettings | None:
+    """Capacity enables projections; the backlog pair is an optional operator fallback."""
+    values = {name: env.get(name, "").strip() for name in PROJECTION_SETTINGS}
+    capacity, upstream, queue = (values[name] for name in PROJECTION_SETTINGS)
+    if not capacity:
+        if upstream or queue:
+            raise ValueError("backlog settings need DEPARTURE_CAPACITY_PER_HOUR")
+        return None
+    if bool(upstream) != bool(queue):
+        raise ValueError(
+            "DEPARTURE_BACKLOG_UPSTREAM and DEPARTURE_BACKLOG_RUNWAY_QUEUE go together"
+        )
+    try:
+        return ProjectionSettings(
+            int(capacity),
+            int(upstream) if upstream else None,
+            int(queue) if queue else None,
+        )
+    except ValueError as error:
+        raise ValueError(f"invalid projection settings: {error}") from error
 
 
 def _utcnow() -> datetime:
@@ -106,7 +136,9 @@ def build_agent(
         report_events=False,
     )
     svc = service or PersistentCongestionService(
-        SpacetimeAdapter(config.database), configuration=config.airport
+        SpacetimeAdapter(config.database),
+        configuration=config.airport,
+        service=CongestionService(projection=config.projection),
     )
 
     async def cycle(ctx: Context) -> None:

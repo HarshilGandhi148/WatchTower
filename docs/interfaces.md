@@ -16,8 +16,8 @@ serialization, and real SpacetimeDB tests verify this compatibility boundary.
 
 shared/contracts.py defines the domain envelope and bounded enum catalog.
 shared/messages.py implements SDK wire serialization and shared/orchestration.py
-defines coordination references. WeatherAssessment, FlowCandidate and
-ValidatedAdvisory payload DTOs remain pending implementation.
+defines coordination references. FlowCandidate and ValidatedAdvisory payload
+DTOs are proposed below; the WeatherAssessment payload remains pending.
 Messages carry schema_version, message_id, case_id, sender_agent, created_at_utc,
 snapshot_id, evidence_ids, airport_icao, valid_until_utc, and optional correlation_id
 and reply_to. UTC-aware timestamps and KDTW are checked by the initial envelope.
@@ -47,6 +47,42 @@ Not enforced here: parameter limits (validator checks them against project bound
 that evidence IDs exist in storage, and uAgents serialization. Review questions:
 weather owner confirms `weather_assessment_id` semantics; validation owner confirms
 the validator can check the action/parameter names and wants no further fields.
+
+### ValidatedAdvisory (proposal, validation owner)
+
+`ValidatedAdvisory` in shared/contracts.py follows plan 6.4 and maps onto the
+frontend `Advisory` display model. Structural rules, enforced at construction:
+
+- Status is always `pending_review`. `AdvisoryStatus` lists the full lifecycle, but
+  approved/ignored/expired/superseded are written only by controller reducers.
+- KDTW; aware-UTC window, creation and expiry; window end > start; expiry > creation;
+  version ≥ 1. `quality` is adequate or limited, because unavailable evidence stays an
+  internal insufficient-data result.
+- At least one evidence ID, with no duplicates. A `projection_id` must also be listed
+  in `evidence_ids`.
+- Parameters only with a flow-review action, never with a notice; unique names.
+- Display text (title, response, reason, owner role, resource, tradeoffs, assumptions,
+  limitations) is non-empty, printable and at most 500 characters.
+- `material_fingerprint` identifies an unchanged advisory across cycles. Storage
+  keeps it so a later run can suppress duplicates or create the next version.
+
+Frontend mapping: `id`←`advisory_id`, `response`←`suggested_response`,
+`resource`←`affected_resource`, `parameters`←`action_parameters` (bounds from the
+validator's catalog), `projectionId`←`projection_id`. `evidence` display rows
+come from stored evidence records, not from the advisory itself.
+
+Review questions:
+
+- **Frontend owner:** does the field mapping cover the card, and should
+  `limitations` stay separate from `assumptions`?
+- **Congestion owner:** the validator excludes the candidate's own derived
+  `projection_id` when it checks that cited evidence belongs to the case opening.
+  The opening lists inputs only. Please persist the `FlowSnapshot`,
+  `ProjectionAssumptions` and `ProjectionComparison` behind each `projection_id`
+  so the validator can recompute it.
+
+The validator maps `no_change` to an internal REJECT with finding `no_change`.
+Adding a separate `ValidationVerdict.NO_CHANGE` is an open option.
 
 ### WeatherAssessmentRequest (proposal, congestion owner)
 
@@ -95,6 +131,37 @@ writes observed coordinates/weather/demand.
 Readiness/capacity assumptions stay explicit. Baseline and proposal use identical
 snapshot/model/demand; only declared response parameters change. Missing live
 demand gives unavailable departure metrics, not invented flights.
+
+### Flight record gate times (proposal, congestion owner → database owner)
+
+Congestion can observe the initial departure backlog instead of using operator
+settings, once stored flight records carry gate times. The congestion side is
+implemented: `stored_feeds` reads the fields, and `prepare_projection` prefers an
+observed backlog. It stays inactive until both database changes below land.
+
+1. **`ingest_flight_records`:** also accept the optional per-record keys
+   `gate_scheduled_utc` and `gate_actual_utc`. Each is a canonical UTC millisecond
+   string or `null` (scheduled/actual gate-out for departures, gate-in for arrivals).
+   Within one batch every record either has both keys or neither. Congestion treats the
+   backlog as observed only when every record has both, so an empty batch or one without
+   the keys still means "not observed".
+2. **`projectionInputs`** (store_projection): when the stored batch carries gate keys,
+   derive the backlog and exclude those flights from demand, as
+   `agents/congestion/metrics.py::departure_backlog` does at the window start.
+   - Consider confirmed, uncancelled departures whose `time_kind` is not `actual_runway`.
+   - **Runway queue:** `gate_actual_utc` ≤ window start.
+   - **Upstream waiting:** `gate_actual_utc` null and `gate_scheduled_utc` ≤ window start.
+   - Exclude both groups from the demand buckets.
+   - Require `initial_upstream_waiting`/`initial_runway_queue` to equal these counts.
+   Without gate keys, keep today's rule: every departure is demand, and the backlog
+   counts are operator settings.
+
+The AeroAPI parser already produces both fields (`data/flightaware.py::DemandRecord`).
+Whoever serializes flight records for ingestion should include them once the reducer
+accepts them. Before change 2, a projection from an observed backlog would be rejected
+as "Projection demand not supported by stored records". Change 1 alone therefore must
+not ship. `agents/congestion/tests/test_projections.py::ObservedBacklogTests` shows the
+expected counts.
 
 ## SpacetimeDB and frontend
 

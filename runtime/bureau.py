@@ -40,7 +40,11 @@ def build_coordinated_bureau(
     endpoint: str | None = None,
     storage: ValidationStorage | None = None,
 ) -> Bureau:
-    """Wire orchestration into validation before running the same three identities."""
+    """Wire orchestration into validation before running the same three identities.
+
+    For callers with their own callbacks. A validator from agents/validation/agent.py
+    already registers orchestration: pass it to ``build_bureau`` instead.
+    """
     bureau = build_bureau(agents, port=port, endpoint=endpoint)
     coordinator = Orchestrator({role: agent.address for role, agent in agents.items()})
     register_orchestration(

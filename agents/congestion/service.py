@@ -35,6 +35,11 @@ from agents.congestion.coordination import (
 )
 from agents.congestion.feeds import FeedSnapshot
 from agents.congestion.metrics import NearbyTraffic, demand_windows, nearby_traffic
+from agents.congestion.projections import (
+    PreparedProjection,
+    ProjectionSettings,
+    prepare_projection,
+)
 from shared.contracts import (
     AgentName,
     FlowCandidate,
@@ -83,8 +88,11 @@ class CongestionService:
         *,
         horizon_minutes: int = 15,
         thresholds: ReviewThresholds | None = None,
+        projection: ProjectionSettings | None = None,
     ) -> None:
+        """``projection`` (operator capacity and backlog) enables stored-demand projections."""
         self._coordinator = coordinator or CaseCoordinator()
+        self._projection = projection
         self._horizon = horizon_minutes
         self._thresholds = thresholds or ReviewThresholds()
         self._cases: dict[str, _Case] = {}
@@ -92,6 +100,8 @@ class CongestionService:
         self.candidates: dict[
             str, FlowCandidate
         ] = {}  # prepared records; durable storage is required
+        # Prepared projections by id; persisted before any candidate that cites them.
+        self.projections: dict[str, PreparedProjection] = {}
 
     @property
     def open_cases(self) -> tuple[str, ...]:
@@ -122,10 +132,12 @@ class CongestionService:
             center=(feeds.configuration.latitude_deg, feeds.configuration.longitude_deg),
             radius_nm=feeds.configuration.radius_nm,
         )
+        prepared = prepare_projection(feeds, self._projection)
         refs = EvidenceRefs(
             traffic=feeds.traffic_evidence_id,
             faa_events=feeds.faa_evidence_ids,
             demand=feeds.demand_evidence_id,
+            projection_id=prepared.projection_id if prepared else None,
         )
         evidence = feeds.evidence_ids
         opening = MessageEnvelope(
@@ -152,7 +164,11 @@ class CongestionService:
                     now_utc=now,
                     horizon_minutes=horizon,
                     nearby=nearby,
-                    demand=demand_windows(
+                    # With an observed backlog, those flights are the initial queue and
+                    # are excluded from demand, exactly as the projection used it.
+                    demand=prepared.demand
+                    if prepared
+                    else demand_windows(
                         feeds.demand_records, feeds.demand_fetched_at_utc, now, horizon
                     ),
                     evidence=refs,
@@ -160,10 +176,14 @@ class CongestionService:
                     weather_assessment_id=assessment_id,
                     previous_nearby=previous,
                     faa=feeds.faa,
+                    comparison=prepared.comparison if prepared else None,
                     thresholds=thresholds,
+                    backlog_observed=prepared.backlog_observed if prepared else True,
                 )
             )
 
+        if prepared is not None:
+            self.projections[prepared.projection_id] = prepared
         self._cases[case_id] = _Case(
             opening, build, window_start=feeds.window_start_utc, window_end=feeds.window_end_utc
         )

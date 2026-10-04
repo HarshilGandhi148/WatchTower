@@ -122,6 +122,25 @@ Use tests/integration/, tests/decisions/, tests/e2e/, provider/agent unit test
 folders, and backend/module/tests/ for this evidence. Never mark a pending gate
 passed because a directory exists or the scaffold builds.
 
+## Validation logic evidence
+
+The validator's pure domain checks (agents/validation/service.py) have unit tests
+using TEST packets:
+
+- cross-case/snapshot/airport references; missing, stale and non-live evidence
+- projections cited as observations
+- recomputed projection invariants and numbers
+- action catalog and parameter bounds
+- weather contradictions leading to one reassessment
+- source prompt-injection text
+- duplicate suppression and versioning
+
+tests/integration/test_congestion_validation.py drives a real congestion candidate
+through the orchestrator and validator. That test rebuilds the evidence records and
+projection inputs because congestion does not store them yet. The agent-cycle and
+provenance gates above stay unchecked until stored evidence, a weather agent and
+persistence exist and run together.
+
 ## Frontend implementation evidence
 
 The frontend has automated coverage for version/assignment/expiry gating,
