@@ -20,5 +20,20 @@ references. feeds.py is an interim live fetch of the public ADS-B and FAA feeds 
 ingestion and the DB adapter exist. Configuration names: CONGESTION_AGENT_SEED,
 WEATHER_AGENT_ADDRESS, VALIDATION_AGENT_ADDRESS, DATA_USER_AGENT (never hardcode a seed).
 
+## AeroAPI demand, backlog and projections
+
+With `ENABLE_FLIGHTAWARE=true`, `FLIGHTAWARE_API_KEY`, `FLIGHTAWARE_BUDGET_USD` and
+`FLIGHTAWARE_COST_PER_RESULT_SET_USD` set, each cycle uses KDTW scheduled departures and
+arrivals (data/flightaware.py), refreshed at most every 5 minutes through a budget and
+per-minute rate guard. Any refusal, failure or truncated page makes demand unavailable,
+never a partial count. Departures that pushed back but are not airborne form the runway
+queue; departures past scheduled gate-out but not pushed back form upstream waiting; both
+are the projection's initial backlog and are excluded from future demand.
+`DEPARTURE_CAPACITY_PER_HOUR` (operator-configured) enables projections comparing the
+baseline with releasing at that rate. Unset, demand is still reported but not projected.
+
+Still to verify with a key: AeroAPI field names, query parameters and the start/end filter
+semantics (see the VERIFY notes in data/flightaware.py).
+
 Not done yet: candidates are kept in memory (validation cannot load them across processes
-until the DB adapter exists), no AeroAPI demand, and weather timeouts are not submitted.
+until the DB adapter exists), and weather timeouts are not submitted.

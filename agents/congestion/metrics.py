@@ -188,14 +188,17 @@ def demand_windows(
     taxi_out_minutes: int | None = None,
     taxi_in_minutes: int | None = None,
     max_age: timedelta = DEFAULT_MAX_DEMAND_AGE,
+    exclude_flight_ids: frozenset[str] = frozenset(),
 ) -> DemandWindows:
     """Bucket airport-associated flights into five-minute windows from ``now_utc``.
 
     Runway times are used directly. A scheduled gate time is used only when the matching
     taxi assumption is given (and is then listed in ``assumptions``); otherwise the record
-    is unplaced. Cancelled flights and records without a time are unplaced. Flights
-    outside the horizon are not counted. ``None`` records, or records fetched longer ago
-    than ``max_age``, make demand unavailable rather than zero.
+    is unplaced. Cancelled/diverted flights and records without a time are unplaced. Flights
+    outside the horizon are not counted. ``exclude_flight_ids`` (e.g. the departure backlog,
+    which the projection counts as its initial queue) are skipped so nothing is counted
+    twice. ``None`` records, or records fetched longer ago than ``max_age``, make demand
+    unavailable rather than zero.
     """
     _require_utc(now_utc)
     if horizon_minutes <= 0 or horizon_minutes % WINDOW_MINUTES:
@@ -214,13 +217,21 @@ def demand_windows(
     counts = [[0, 0, 0, 0] for _ in range(count)]  # dep conf, dep inf, arr conf, arr inf
     assumptions: list[str] = []
     unplaced = 0
+    excluded = 0
     for record in records:
+        if record.flight_id in exclude_flight_ids:
+            excluded += 1
+            continue
         runway_time = _runway_time(record, taxi_out_minutes, taxi_in_minutes)
         if runway_time is None:
             unplaced += 1
             continue
         if record.time_kind is TimeKind.SCHEDULED_GATE:
             note = _taxi_note(record.direction, taxi_out_minutes, taxi_in_minutes)
+            if note not in assumptions:
+                assumptions.append(note)
+        elif record.time_kind is TimeKind.SCHEDULED_RUNWAY:
+            note = "scheduled runway times used where no estimate or actual time exists"
             if note not in assumptions:
                 assumptions.append(note)
         offset = (runway_time - now_utc) / timedelta(minutes=WINDOW_MINUTES)
@@ -236,6 +247,11 @@ def demand_windows(
         DemandWindow(starts[i], starts[i] + timedelta(minutes=WINDOW_MINUTES), *counts[i])
         for i in range(count)
     )
+    if excluded:
+        assumptions.append(
+            f"{excluded} departures already in the backlog count as the initial queue, "
+            "not as new demand"
+        )
     notes = ("some records could not be placed in a window",) if unplaced else ()
     quality = EvidenceQuality.LIMITED if (assumptions or unplaced) else EvidenceQuality.ADEQUATE
     return DemandWindows(windows, unplaced, tuple(assumptions), None, quality, notes)
@@ -244,7 +260,7 @@ def demand_windows(
 def _runway_time(
     record: DemandRecord, taxi_out: int | None, taxi_in: int | None
 ) -> datetime | None:
-    if record.cancelled or record.time_utc is None or record.time_kind is None:
+    if record.excluded_from_demand or record.time_utc is None or record.time_kind is None:
         return None
     if record.time_kind is not TimeKind.SCHEDULED_GATE:
         return record.time_utc
@@ -253,6 +269,68 @@ def _runway_time(
     if record.direction is FlightDirection.ARRIVAL and taxi_in is not None:
         return record.time_utc - timedelta(minutes=taxi_in)
     return None
+
+
+@dataclass(frozen=True, slots=True)
+class DepartureBacklog:
+    """Initial departure queue for the projection, estimated from flight records.
+
+    ``runway_queue``: pushed back (actual gate-out) but not airborne, i.e. taxiing out or
+    holding for the runway. ``upstream_waiting``: past scheduled gate-out but not pushed
+    back. Readiness is not observed, so the upstream count is an explicit estimate.
+    ``None`` counts mean unknown (no or stale records), never zero.
+    """
+
+    upstream_waiting: int | None
+    runway_queue: int | None
+    flight_ids: frozenset[str] = frozenset()
+    unclassified: int = 0
+    assumptions: tuple[str, ...] = ()
+    unavailable_reason: str | None = None
+
+
+def departure_backlog(
+    records: tuple[DemandRecord, ...] | None,
+    fetched_at_utc: datetime | None,
+    now_utc: datetime,
+    *,
+    max_age: timedelta = DEFAULT_MAX_DEMAND_AGE,
+) -> DepartureBacklog:
+    """Estimate the departure backlog at ``now_utc`` from confirmed departure records."""
+    _require_utc(now_utc)
+    if records is None or fetched_at_utc is None:
+        return DepartureBacklog(None, None, unavailable_reason="no flight records available")
+    _require_utc(fetched_at_utc)
+    if now_utc - fetched_at_utc > max_age:
+        return DepartureBacklog(None, None, unavailable_reason="flight records are stale")
+
+    upstream = runway = unclassified = 0
+    ids: set[str] = set()
+    for record in records:
+        if (
+            record.direction is not FlightDirection.DEPARTURE
+            or record.association is not Association.CONFIRMED_RECORD
+            or record.excluded_from_demand
+            or record.time_kind is TimeKind.ACTUAL_RUNWAY  # already airborne
+        ):
+            continue
+        if record.gate_actual_utc is not None and record.gate_actual_utc <= now_utc:
+            runway += 1
+            ids.add(record.flight_id)
+        elif record.gate_actual_utc is None and record.gate_scheduled_utc is not None:
+            if record.gate_scheduled_utc <= now_utc:
+                upstream += 1
+                ids.add(record.flight_id)
+        elif record.gate_actual_utc is None:
+            unclassified += 1
+    assumptions = [
+        "runway queue = departures pushed back but not airborne (taxiing or holding)",
+        "upstream waiting = departures past scheduled gate-out but not pushed back; "
+        "readiness is not observed",
+    ]
+    if unclassified:
+        assumptions.append(f"{unclassified} departures had no gate times and were not classified")
+    return DepartureBacklog(upstream, runway, frozenset(ids), unclassified, tuple(assumptions))
 
 
 def _taxi_note(direction: FlightDirection, taxi_out: int | None, taxi_in: int | None) -> str:

@@ -1,0 +1,98 @@
+{
+  "scheduled_departures": [
+    {
+      "fa_flight_id": "TEST-DEP-TAXIING",
+      "ident": "TST101",
+      "origin": {"code_icao": "KDTW"},
+      "destination": {"code_icao": "KORD"},
+      "cancelled": false,
+      "diverted": false,
+      "scheduled_out": "2026-10-04T15:50:00Z",
+      "actual_out": "2026-10-04T15:55:00Z",
+      "scheduled_off": "2026-10-04T16:02:00Z",
+      "estimated_off": "2026-10-04T16:06:00Z",
+      "actual_off": null
+    },
+    {
+      "fa_flight_id": "TEST-DEP-HELD",
+      "ident": "TST102",
+      "origin": {"code_icao": "KDTW"},
+      "destination": {"code_icao": "KATL"},
+      "cancelled": false,
+      "diverted": false,
+      "scheduled_out": "2026-10-04T15:55:00Z",
+      "actual_out": null,
+      "scheduled_off": "2026-10-04T16:07:00Z",
+      "estimated_off": "2026-10-04T16:20:00Z",
+      "actual_off": null
+    },
+    {
+      "fa_flight_id": "TEST-DEP-FUTURE",
+      "ident": "TST103",
+      "origin": {"code_icao": "KDTW"},
+      "destination": {"code_icao": "KLGA"},
+      "cancelled": false,
+      "diverted": false,
+      "scheduled_out": "2026-10-04T16:05:00Z",
+      "actual_out": null,
+      "scheduled_off": "2026-10-04T16:12:00Z",
+      "estimated_off": null,
+      "actual_off": null
+    },
+    {
+      "fa_flight_id": "TEST-DEP-GATE-ONLY",
+      "ident": "TST104",
+      "origin": {"code_icao": "KDTW"},
+      "destination": null,
+      "cancelled": false,
+      "diverted": false,
+      "scheduled_out": "2026-10-04T16:08:00Z",
+      "actual_out": null,
+      "scheduled_off": null,
+      "estimated_off": null,
+      "actual_off": null
+    },
+    {
+      "fa_flight_id": "TEST-DEP-CANCELLED",
+      "ident": "TST105",
+      "origin": {"code_icao": "KDTW"},
+      "destination": {"code_icao": "KBOS"},
+      "cancelled": true,
+      "diverted": false,
+      "scheduled_out": "2026-10-04T15:45:00Z",
+      "actual_out": null,
+      "scheduled_off": "2026-10-04T15:57:00Z",
+      "estimated_off": null,
+      "actual_off": null
+    },
+    {
+      "fa_flight_id": "TEST-DEP-WRONG-ORIGIN",
+      "ident": "TST106",
+      "origin": {"code_icao": "KCLE"},
+      "destination": {"code_icao": "KDTW"},
+      "scheduled_out": "2026-10-04T16:00:00Z"
+    },
+    {
+      "ident": "TST107-NO-ID",
+      "origin": {"code_icao": "KDTW"},
+      "scheduled_out": "2026-10-04T16:00:00Z"
+    },
+    {
+      "fa_flight_id": "TEST-DEP-TAXIING",
+      "ident": "TST101",
+      "origin": {"code_icao": "KDTW"},
+      "scheduled_out": "2026-10-04T15:50:00Z"
+    },
+    {
+      "fa_flight_id": "TEST-DEP-BAD-TIME",
+      "ident": "TST108",
+      "origin": {"code_icao": "KDTW"},
+      "destination": {"code_icao": "KMSP"},
+      "scheduled_out": "not a time",
+      "estimated_off": "2026-10-04T16:14:00"
+    },
+    "not-an-object"
+  ],
+  "links": null,
+  "num_pages": 1
+}
