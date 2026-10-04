@@ -65,3 +65,18 @@ behavior exists and has been verified. A scaffold test is not operational eviden
 Use tests/integration/, tests/decisions/, tests/e2e/, provider/agent unit test
 folders, and backend/module/tests/ for this evidence. Never mark a pending gate
 passed because a directory exists or the scaffold builds.
+
+## Frontend implementation evidence
+
+The frontend has automated coverage for version/assignment/expiry gating,
+bounded edits, rejected requests, stable retry IDs, subscription cleanup,
+disconnect/resynchronization, fixed snapshots, unavailable metrics, stale
+positions, source-text escaping, Detroit DST, focus restoration, accepted
+projection selection and synchronization across two isolated TEST identities.
+The separate browser harness is documented in tests/e2e/README.md.
+
+These checks use TEST display data and a local TEST transport. They do not prove
+real reducer authorization, live isolation, deterministic model invariants or
+provider integration. The operational checklist above remains pending until
+credentialed evidence exists. Browser visual review was unavailable because the
+browser tool could not verify the administrator-enforced policy.

@@ -57,3 +57,9 @@ decision history through official SDK subscriptions. Disconnect disables decisio
 reconnect reloads current versions. Browser environment exposes only WS URL,
 database name, and display timezone. Controller auth belongs to per-session
 identity flow; no shared service token is shipped to the browser.
+
+## Frontend adapter handoff
+
+The frontend display boundary and pending live verification are documented in
+[frontend integration](frontend-integration.md). Display types are presentation
+models, not generated database row contracts. Real SDK integration remains pending.

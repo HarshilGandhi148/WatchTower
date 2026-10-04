@@ -1,5 +1,6 @@
-# Implementation boundary
+# Frontend implementation boundary
 
-Version-aware approve/edit/ignore; disconnect disables decisions and reconnect reloads state.
+Queue ordering, latest-version filtering, expiry/assignment/connection gating and bounded edit validation. Stable request IDs and duplicate submission handling live in the client. Server reducers remain authoritative for permissions, races and material evidence changes.
 
-Frontend-owned. Implementation pending; colocate component/feature tests here.
+Owner: FrontEndOwner. See frontend/README.md and docs/frontend-integration.md
+for verification and the pending backend handoff.
