@@ -3,6 +3,10 @@ import { createRoot } from 'react-dom/client';
 
 import App from './App';
 import './styles.css';
+import { createDashboardClient } from './lib/connection';
+import { createSpacetimeTransport } from './lib/spacetimeTransport';
+
+const client = createDashboardClient(createSpacetimeTransport());
 
 const root = document.getElementById('root');
 if (!root) {
@@ -11,6 +15,6 @@ if (!root) {
 
 createRoot(root).render(
   <StrictMode>
-    <App />
+    <App client={client} />
   </StrictMode>,
 );

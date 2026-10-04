@@ -109,3 +109,10 @@ Failures expose safe error categories/status, never raw bodies or headers.
 
 Schema and generated bindings are one review surface; integration and frontend
 owners review this proposal alongside the backend implementation.
+
+## Frontend adapter handoff
+
+The frontend display boundary and pending live verification are documented in
+[frontend integration](frontend-integration.md). Display types are presentation
+models, not generated database row contracts. The observation SDK adapter is
+implemented; advisory and controller integration remain pending.
