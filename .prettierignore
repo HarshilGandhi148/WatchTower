@@ -4,3 +4,5 @@ coverage/
 frontend/src/module_bindings/
 full_technical_plan.md
 package-lock.json
+
+.cache/

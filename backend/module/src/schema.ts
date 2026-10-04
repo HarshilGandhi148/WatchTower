@@ -1,6 +1,7 @@
 import { schema } from 'spacetimedb/server';
 
 import {
+  validationReports,
   flightRecords,
   assessmentRequests,
   feedBatches,
@@ -23,6 +24,7 @@ import {
 
 export const database = schema({
   servicePermissions,
+  validationReports,
   flightRecords,
   assessmentRequests,
   feedBatches,

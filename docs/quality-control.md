@@ -141,3 +141,11 @@ real reducer authorization, live isolation, deterministic model invariants or
 provider integration. The operational checklist above remains pending until
 credentialed evidence exists. Browser visual review was unavailable because the
 browser tool could not verify the administrator-enforced policy.
+
+### Mission-control presentation
+
+The map/exchange presentation includes a separate generated TEST replay, immutable
+evidence inspection, reduced-motion support and backend informational validation
+reports. Tests verify these mechanisms. The Weather Agent, advisory publication,
+controller authorization and operational aviation release gates remain open.
+A supported informational report does not satisfy those gates.

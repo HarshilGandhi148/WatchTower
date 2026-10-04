@@ -140,3 +140,12 @@ transport until the frontend owner adds these mappings/subscriptions.
 The default shared center is now the same FAA KDTW point already documented above; radius
 is configured by the ingestion/runtime airport config. Exposing alternate airport selection
 still requires expanding the current KDTW-only shared contracts and weather integration.
+
+## Mission-control workspace
+
+The production entrypoint now uses the map/exchange workspace, preserving the
+existing review UI as a secondary view. Subscriptions include assessment requests,
+findings, candidates, deliveries and informational validation reports. Snapshot
+contents are fetched only when the evidence inspector opens. See
+[mission-control handoff](mission-control.md) for TEST replay setup, the new report
+contract and remaining live integration boundaries. Receipt is still not approval.

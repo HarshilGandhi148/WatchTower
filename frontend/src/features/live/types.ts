@@ -1,3 +1,4 @@
+import type { ExchangeData } from '../exchange/types';
 // Frontend display models, not database rows or generated wire contracts.
 // The integration adapter maps reviewed SDK bindings into these models.
 export type FeedStatus =
@@ -125,6 +126,7 @@ export interface ControllerSession {
   decidableAdvisoryIds: readonly string[];
 }
 export interface DashboardData {
+  exchange?: ExchangeData;
   refreshedAtUtc: string | null;
   sources: readonly SourceHealth[];
   aircraft: readonly Aircraft[];

@@ -48,6 +48,7 @@ import ReportSourceFailureReducer from "./report_source_failure_reducer";
 import SetIngestionPermissionReducer from "./set_ingestion_permission_reducer";
 import SetServicePermissionReducer from "./set_service_permission_reducer";
 import StoreProjectionReducer from "./store_projection_reducer";
+import StoreValidationReportReducer from "./store_validation_report_reducer";
 import SubmitFlowCandidateReducer from "./submit_flow_candidate_reducer";
 import SubmitWeatherAssessmentReducer from "./submit_weather_assessment_reducer";
 
@@ -67,6 +68,7 @@ import LatestFeedsRow from "./latest_feeds_table";
 import PendingDeliveriesRow from "./pending_deliveries_table";
 import ProjectionResultsRow from "./projection_results_table";
 import SourceHealthRow from "./source_health_table";
+import ValidationReportsRow from "./validation_reports_table";
 import WeatherRecordsRow from "./weather_records_table";
 
 /** Type-only namespace exports for generated type groups. */
@@ -234,6 +236,21 @@ const tablesSchema = __schema({
       { name: 'source_health_provider_key', constraint: 'unique', columns: ['provider'] },
     ],
   }, SourceHealthRow),
+  validationReports: __table({
+    name: 'validation_reports',
+    indexes: [
+      { accessor: 'candidateId', name: 'validation_reports_candidate_id_idx_btree', algorithm: 'btree', columns: [
+        'candidateId',
+      ] },
+      { accessor: 'reportId', name: 'validation_reports_report_id_idx_btree', algorithm: 'btree', columns: [
+        'reportId',
+      ] },
+    ],
+    constraints: [
+      { name: 'validation_reports_candidate_id_key', constraint: 'unique', columns: ['candidateId'] },
+      { name: 'validation_reports_report_id_key', constraint: 'unique', columns: ['reportId'] },
+    ],
+  }, ValidationReportsRow),
   weatherRecords: __table({
     name: 'weather_records',
     indexes: [
@@ -263,6 +280,7 @@ const reducersSchema = __reducers(
   __reducerSchema("set_ingestion_permission", SetIngestionPermissionReducer),
   __reducerSchema("set_service_permission", SetServicePermissionReducer),
   __reducerSchema("store_projection", StoreProjectionReducer),
+  __reducerSchema("store_validation_report", StoreValidationReportReducer),
   __reducerSchema("submit_flow_candidate", SubmitFlowCandidateReducer),
   __reducerSchema("submit_weather_assessment", SubmitWeatherAssessmentReducer),
 );

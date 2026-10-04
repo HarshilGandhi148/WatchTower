@@ -236,6 +236,17 @@ async def exercise_congestion(origin, database, admin, ingest, request_http, red
     for _ in range(2):
         await gateway.handle_candidate(ctx, TEST_ADDRESSES[AgentName.CONGESTION], message)
     validate.assert_awaited_once()
+    reports = await validation.read_records("validation_reports")
+    assert len(reports) == 1
+    report = json.loads(reports[0]["content_json"])
+    assert report["candidate_id"] == ready.candidate_id
+    assert report["snapshot_id"] == opening.snapshot_id
+    assert len(report["checks"]) == 6
+    await validation.call("store_validation_report", report)
+    for adapter in (ingestion, weather, congestion, unauthorized):
+        await rejected(adapter.call("store_validation_report", report))
+    await rejected(validation.call("store_validation_report", report | {"suggestion": "conflict"}))
+
     assert not await congestion.pending_deliveries()
     row = await validation.load_record("pending_deliveries", "candidate_id", ready.candidate_id)
     assert row["status"] == "received"  # delivery, not approval
@@ -265,6 +276,7 @@ async def exercise_congestion(origin, database, admin, ingest, request_http, red
         CandidateReadyMessage.parse_raw(storage_json(ready_two)),
     )
     assert validate.await_count == 2
+    assert len(await validation.read_records("validation_reports")) == 2
     assert not await congestion.pending_deliveries()
     assert (await congestion.load_record("evidence_snapshots", "snapshot_id", opening.snapshot_id))[
         "closed"

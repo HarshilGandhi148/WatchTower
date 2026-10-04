@@ -12,6 +12,8 @@ import {
   type MapProjection,
 } from '../../features/projection/aircraftPaths';
 
+const noHighlights: readonly string[] = [];
+
 export function TrafficMap({
   aircraft,
   now,
@@ -19,6 +21,8 @@ export function TrafficMap({
   timezone,
   mode,
   mapProjection = null,
+  initialView = 'airport',
+  highlightedAircraftIds = noHighlights,
   onSelectProjectedAircraft,
   children,
 }: {
@@ -27,6 +31,8 @@ export function TrafficMap({
   disconnected: boolean;
   timezone: string;
   mode: 'LIVE' | 'TEST';
+  initialView?: MapView;
+  highlightedAircraftIds?: readonly string[];
   mapProjection?: MapProjection | null;
   onSelectProjectedAircraft?: (id: string) => void;
   children?: ReactNode;
@@ -39,8 +45,9 @@ export function TrafficMap({
     now,
     disconnected,
     timezone,
+    highlightedAircraftIds,
   });
-  const view = useRef<MapView>('airport');
+  const view = useRef<MapView>(initialView);
   const radius = useRef(MAX_VIEW_RADIUS_NM);
   const latestProjection = useRef(mapProjection);
   const selectProjected = useRef(onSelectProjectedAircraft);
@@ -49,15 +56,21 @@ export function TrafficMap({
   }, [onSelectProjectedAircraft]);
   const radiusId = useId();
   const [radiusNm, setRadiusNm] = useState(MAX_VIEW_RADIUS_NM);
-  const [selectedView, setSelectedView] = useState<MapView>('airport');
+  const [selectedView, setSelectedView] = useState<MapView>(initialView);
   const [attempt, setAttempt] = useState(0);
   const [status, setStatus] = useState<'loading' | 'ready' | 'unavailable'>(
     'loading',
   );
   useEffect(() => {
-    latest.current = { aircraft, now, disconnected, timezone };
+    latest.current = {
+      aircraft,
+      now,
+      disconnected,
+      timezone,
+      highlightedAircraftIds,
+    };
     engine.current?.updateAircraft(latest.current);
-  }, [aircraft, now, disconnected, timezone]);
+  }, [aircraft, now, disconnected, timezone, highlightedAircraftIds]);
   useEffect(() => {
     latestProjection.current = mapProjection;
     engine.current?.updateProjection(mapProjection);
