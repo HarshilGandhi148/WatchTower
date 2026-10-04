@@ -31,3 +31,7 @@ format:
 
 frontend:
 	npm --prefix frontend run dev
+
+.PHONY: check-spacetime
+check-spacetime:
+	$(PYTHON) -m tests.integration.spacetimedb_live

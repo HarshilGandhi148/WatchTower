@@ -11,10 +11,11 @@
     "lint": "eslint . --max-warnings 0",
     "format:check": "prettier --check . --ignore-path ../../.prettierignore",
     "format": "prettier --write . --ignore-path ../../.prettierignore",
-    "check": "npm run lint && npm run format:check && npm run typecheck"
+    "check": "npm run lint && npm run format:check && npm run typecheck && npm test",
+    "test": "vitest run"
   },
   "dependencies": {
-    "spacetimedb": "^2.0.0"
+    "spacetimedb": "2.10.2"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
@@ -22,6 +23,8 @@
     "globals": "^16.0.0",
     "prettier": "^3.0.0",
     "typescript": "^5.9.0",
-    "typescript-eslint": "^8.0.0"
+    "typescript-eslint": "^8.0.0",
+    "vitest": "3.2.7",
+    "esbuild": "0.28.2"
   }
 }

@@ -3,6 +3,9 @@
 FlowCandidate (plan section 6.3) is the first payload DTO. uAgents serialization
 still requires a separate reviewed implementation. The declared sender role is
 structural information, not authentication.
+Agent assessment/advisory payload DTOs remain pending. Envelope serialization
+is implemented in shared/messages.py; observation DTOs are defined below.
+The declared sender role is structural information, not authentication.
 """
 
 import math
