@@ -1,11 +1,9 @@
-"""Initial cross-agent envelope and bounded catalog from technical plan section 6.
+"""Shared domain contracts for observations and the three-agent workflow.
 
-FlowCandidate (plan section 6.3) is the first payload DTO. uAgents serialization
-still requires a separate reviewed implementation. The declared sender role is
-structural information, not authentication.
-Agent assessment/advisory payload DTOs remain pending. Envelope serialization
-is implemented in shared/messages.py; observation DTOs are defined below.
-The declared sender role is structural information, not authentication.
+Observation DTOs preserve the implemented SpacetimeDB ingestion interface.
+FlowCandidate and WeatherAssessmentRequest extend the agent payload catalog;
+shared/messages.py provides envelope and weather-exchange wire serialization.
+Declared sender roles describe structure, not authentication.
 """
 
 import math
@@ -301,3 +299,136 @@ class WeatherAssessmentRequest:
             raise ValueError("Assessment window must end after it starts")
         if type(self.attempt) is not int or not 1 <= self.attempt <= self.MAX_ATTEMPT:
             raise ValueError(f"attempt must be an integer from 1 to {self.MAX_ATTEMPT}")
+
+
+# Observation DTOs are infrastructure contracts, not additional application agents.
+def _utc_millis(value: datetime) -> str:
+    if not isinstance(value, datetime) or value.utcoffset() != timedelta(0):
+        raise ValueError("Observation timestamps must use aware UTC")
+    if value.year < 1970 or value.microsecond % 1000:
+        raise ValueError("Observation timestamps require nonnegative millisecond precision")
+    return value.isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+
+def _measurement(value: float | None, minimum: float, maximum: float) -> None:
+    import math
+
+    if value is not None and (
+        isinstance(value, bool)
+        or not isinstance(value, (float, int))
+        or not math.isfinite(value)
+        or not minimum <= value <= maximum
+    ):
+        raise ValueError("Invalid observation measurement")
+
+
+def _source(provider: str, source_ref: str, fetched: datetime) -> None:
+    if provider not in {"awc", "adsb_lol"}:
+        raise ValueError("Unsupported observation provider")
+    if not source_ref.strip() or len(source_ref) > 2048 or any(ord(c) < 32 for c in source_ref):
+        raise ValueError("Invalid source reference")
+    _utc_millis(fetched)
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class WeatherRecord:
+    """Normalized KDTW METAR; absent measurements remain unknown."""
+
+    observed_at_utc: datetime
+    fetched_at_utc: datetime
+    source_ref: str
+    wind_direction_deg: float | None = None
+    wind_speed_kt: float | None = None
+    wind_gust_kt: float | None = None
+    visibility_m: float | None = None
+    ceiling_ft: float | None = None
+    provider: str = "awc"
+    airport_icao: str = "KDTW"
+    record_type: str = "METAR"
+
+    def __post_init__(self) -> None:
+        _source(self.provider, self.source_ref, self.fetched_at_utc)
+        _utc_millis(self.observed_at_utc)
+        if self.provider != "awc" or self.airport_icao != "KDTW" or self.record_type != "METAR":
+            raise ValueError("Unsupported weather record")
+        if self.observed_at_utc > self.fetched_at_utc:
+            raise ValueError("Observation after fetch")
+        for value, limit in (
+            (self.wind_direction_deg, 360),
+            (self.wind_speed_kt, 300),
+            (self.wind_gust_kt, 300),
+            (self.visibility_m, 200_000),
+            (self.ceiling_ft, 100_000),
+        ):
+            _measurement(value, 0, limit)
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class AircraftObservation:
+    """A nearby aircraft observation; airport association is not implied."""
+
+    aircraft_id: str
+    observed_at_utc: datetime
+    latitude_deg: float | None = None
+    longitude_deg: float | None = None
+    altitude_ft: float | None = None
+    speed_kt: float | None = None
+    track_deg: float | None = None
+    position_age_s: float | None = None
+    on_ground: bool | None = None
+
+    def __post_init__(self) -> None:
+        if (
+            not self.aircraft_id.strip()
+            or len(self.aircraft_id) > 128
+            or any(ord(c) < 32 for c in self.aircraft_id)
+        ):
+            raise ValueError("Invalid aircraft ID")
+        _utc_millis(self.observed_at_utc)
+        if (self.latitude_deg is None) != (self.longitude_deg is None):
+            raise ValueError("Coordinates must be a pair")
+        if self.on_ground is not None and type(self.on_ground) is not bool:
+            raise ValueError("Invalid on_ground")
+        for value, minimum, maximum in (
+            (self.latitude_deg, -90, 90),
+            (self.longitude_deg, -180, 180),
+            (self.altitude_ft, -2000, 100_000),
+            (self.speed_kt, 0, 2000),
+            (self.track_deg, 0, 360),
+            (self.position_age_s, 0, 86400),
+        ):
+            _measurement(value, minimum, maximum)
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class AircraftBatch:
+    fetched_at_utc: datetime
+    source_ref: str
+    observations: tuple[AircraftObservation, ...]
+    provider: str = "adsb_lol"
+
+    def __post_init__(self) -> None:
+        _source(self.provider, self.source_ref, self.fetched_at_utc)
+        if self.provider != "adsb_lol" or not isinstance(self.observations, tuple):
+            raise ValueError("Invalid aircraft batch")
+        if len(self.observations) > 1000:
+            raise ValueError("Aircraft batch exceeds 1000 observations")
+        seen: set[str] = set()
+        for observation in self.observations:
+            if not isinstance(observation, AircraftObservation):
+                raise ValueError("Expected AircraftObservation")
+            if observation.aircraft_id in seen:
+                raise ValueError("Duplicate aircraft")
+            seen.add(observation.aircraft_id)
+            if observation.observed_at_utc > self.fetched_at_utc:
+                raise ValueError("Observation after fetch")
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class SourceFailure:
+    provider: str
+    source_ref: str
+    fetched_at_utc: datetime
+
+    def __post_init__(self) -> None:
+        _source(self.provider, self.source_ref, self.fetched_at_utc)

@@ -3,6 +3,15 @@
 full_technical_plan.md is the product authority. This document identifies
 stable boundaries so the four workstreams can proceed independently.
 
+## Congestion CI compatibility repair
+
+The congestion contracts extend, rather than replace, the observation foundation.
+`WeatherRecord`, `AircraftObservation`, `AircraftBatch`, `SourceFailure`, and their
+UTC/measurement helpers remain available in `shared/contracts.py` alongside
+`FlowCandidate` and `WeatherAssessmentRequest`. The observation payload schema and
+generated database bindings are unchanged. Existing observation, congestion,
+serialization, and real SpacetimeDB tests verify this compatibility boundary.
+
 ## Agent messages
 
 shared/contracts.py defines the domain envelope and bounded enum catalog.
