@@ -10,7 +10,7 @@ requires-python = ">=3.12,<3.14"
 dependencies = ["uagents==0.26.0"]
 
 [tool.setuptools.packages.find]
-include = ["agents*", "data*", "projection*", "shared*", "runtime*"]
+include = ["agents*", "data*", "projection*", "shared*", "runtime*", "watchtower_client*"]
 exclude = ["*.tests", "*.tests.*", "tests*", "scripts*"]
 
 [tool.ruff]
@@ -24,7 +24,7 @@ select = ["E", "F", "I", "UP", "B"]
 [tool.mypy]
 python_version = "3.12"
 strict = true
-files = ["agents", "data", "projection", "shared", "runtime", "scripts"]
+files = ["agents", "data", "projection", "shared", "runtime", "scripts", "watchtower_client"]
 exclude = ["(^|/)tests/"]
 
 # Fetch.ai supplies annotations but no py.typed marker; inspect its source types.

@@ -76,3 +76,11 @@ export const set_service_permission = database.reducer(
 );
 
 export { store_validation_report } from './reducers/reports';
+
+export {
+  seed_agent_identity,
+  write_ingest_event,
+  write_weather_reading,
+  write_congestion_reading,
+  write_validation_result,
+} from './reducers/streams';

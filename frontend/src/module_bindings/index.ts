@@ -45,12 +45,17 @@ import PruneLiveObservationsReducer from "./prune_live_observations_reducer";
 import RecordCandidateReceiptReducer from "./record_candidate_receipt_reducer";
 import RegisterAssessmentRequestReducer from "./register_assessment_request_reducer";
 import ReportSourceFailureReducer from "./report_source_failure_reducer";
+import SeedAgentIdentityReducer from "./seed_agent_identity_reducer";
 import SetIngestionPermissionReducer from "./set_ingestion_permission_reducer";
 import SetServicePermissionReducer from "./set_service_permission_reducer";
 import StoreProjectionReducer from "./store_projection_reducer";
 import StoreValidationReportReducer from "./store_validation_report_reducer";
 import SubmitFlowCandidateReducer from "./submit_flow_candidate_reducer";
 import SubmitWeatherAssessmentReducer from "./submit_weather_assessment_reducer";
+import WriteCongestionReadingReducer from "./write_congestion_reading_reducer";
+import WriteIngestEventReducer from "./write_ingest_event_reducer";
+import WriteValidationResultReducer from "./write_validation_result_reducer";
+import WriteWeatherReadingReducer from "./write_weather_reading_reducer";
 
 // Import all procedure arg schemas
 
@@ -59,16 +64,20 @@ import AgentFindingsRow from "./agent_findings_table";
 import AircraftObservationsRow from "./aircraft_observations_table";
 import AirportEventsRow from "./airport_events_table";
 import AssessmentRequestsRow from "./assessment_requests_table";
+import CongestionReadingRow from "./congestion_reading_table";
 import EvidenceRecordsRow from "./evidence_records_table";
 import EvidenceSnapshotsRow from "./evidence_snapshots_table";
 import FeedBatchesRow from "./feed_batches_table";
 import FlightRecordsRow from "./flight_records_table";
 import FlowCandidatesRow from "./flow_candidates_table";
+import IngestEventRow from "./ingest_event_table";
 import LatestFeedsRow from "./latest_feeds_table";
 import PendingDeliveriesRow from "./pending_deliveries_table";
 import ProjectionResultsRow from "./projection_results_table";
 import SourceHealthRow from "./source_health_table";
 import ValidationReportsRow from "./validation_reports_table";
+import ValidationResultRow from "./validation_result_table";
+import WeatherReadingRow from "./weather_reading_table";
 import WeatherRecordsRow from "./weather_records_table";
 
 /** Type-only namespace exports for generated type groups. */
@@ -123,6 +132,21 @@ const tablesSchema = __schema({
       { name: 'assessment_requests_case_round_key', constraint: 'unique', columns: ['caseRound'] },
     ],
   }, AssessmentRequestsRow),
+  congestionReading: __table({
+    name: 'congestion_reading',
+    indexes: [
+      { accessor: 'eventKey', name: 'congestion_reading_event_key_idx_btree', algorithm: 'btree', columns: [
+        'eventKey',
+      ] },
+      { accessor: 'id', name: 'congestion_reading_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+    ],
+    constraints: [
+      { name: 'congestion_reading_event_key_key', constraint: 'unique', columns: ['eventKey'] },
+      { name: 'congestion_reading_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, CongestionReadingRow),
   evidenceRecords: __table({
     name: 'evidence_records',
     indexes: [
@@ -189,6 +213,21 @@ const tablesSchema = __schema({
       { name: 'flow_candidates_case_round_key', constraint: 'unique', columns: ['caseRound'] },
     ],
   }, FlowCandidatesRow),
+  ingestEvent: __table({
+    name: 'ingest_event',
+    indexes: [
+      { accessor: 'eventKey', name: 'ingest_event_event_key_idx_btree', algorithm: 'btree', columns: [
+        'eventKey',
+      ] },
+      { accessor: 'id', name: 'ingest_event_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+    ],
+    constraints: [
+      { name: 'ingest_event_event_key_key', constraint: 'unique', columns: ['eventKey'] },
+      { name: 'ingest_event_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, IngestEventRow),
   latestFeeds: __table({
     name: 'latest_feeds',
     indexes: [
@@ -251,6 +290,36 @@ const tablesSchema = __schema({
       { name: 'validation_reports_report_id_key', constraint: 'unique', columns: ['reportId'] },
     ],
   }, ValidationReportsRow),
+  validationResult: __table({
+    name: 'validation_result',
+    indexes: [
+      { accessor: 'eventKey', name: 'validation_result_event_key_idx_btree', algorithm: 'btree', columns: [
+        'eventKey',
+      ] },
+      { accessor: 'id', name: 'validation_result_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+    ],
+    constraints: [
+      { name: 'validation_result_event_key_key', constraint: 'unique', columns: ['eventKey'] },
+      { name: 'validation_result_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, ValidationResultRow),
+  weatherReading: __table({
+    name: 'weather_reading',
+    indexes: [
+      { accessor: 'eventKey', name: 'weather_reading_event_key_idx_btree', algorithm: 'btree', columns: [
+        'eventKey',
+      ] },
+      { accessor: 'id', name: 'weather_reading_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+    ],
+    constraints: [
+      { name: 'weather_reading_event_key_key', constraint: 'unique', columns: ['eventKey'] },
+      { name: 'weather_reading_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, WeatherReadingRow),
   weatherRecords: __table({
     name: 'weather_records',
     indexes: [
@@ -277,12 +346,17 @@ const reducersSchema = __reducers(
   __reducerSchema("record_candidate_receipt", RecordCandidateReceiptReducer),
   __reducerSchema("register_assessment_request", RegisterAssessmentRequestReducer),
   __reducerSchema("report_source_failure", ReportSourceFailureReducer),
+  __reducerSchema("seed_agent_identity", SeedAgentIdentityReducer),
   __reducerSchema("set_ingestion_permission", SetIngestionPermissionReducer),
   __reducerSchema("set_service_permission", SetServicePermissionReducer),
   __reducerSchema("store_projection", StoreProjectionReducer),
   __reducerSchema("store_validation_report", StoreValidationReportReducer),
   __reducerSchema("submit_flow_candidate", SubmitFlowCandidateReducer),
   __reducerSchema("submit_weather_assessment", SubmitWeatherAssessmentReducer),
+  __reducerSchema("write_congestion_reading", WriteCongestionReadingReducer),
+  __reducerSchema("write_ingest_event", WriteIngestEventReducer),
+  __reducerSchema("write_validation_result", WriteValidationResultReducer),
+  __reducerSchema("write_weather_reading", WriteWeatherReadingReducer),
 );
 
 /** The schema information for all procedures in this module. This is defined the same way as the procedures would have been defined in the server. */

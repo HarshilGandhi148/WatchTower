@@ -39,7 +39,7 @@ class SpacetimeSettings:
     def from_env(
         cls, environment: Mapping[str, str] | None = None, *, role: str = "ingest"
     ) -> "SpacetimeSettings":
-        if role not in {"ingest", "weather", "congestion", "validation"}:
+        if role not in {"ingest", "weather", "congestion", "validation", "bridge"}:
             raise ValueError("Unsupported service role")
         env = os.environ if environment is None else environment
         return cls(

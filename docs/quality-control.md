@@ -149,3 +149,15 @@ evidence inspection, reduced-motion support and backend informational validation
 reports. Tests verify these mechanisms. The Weather Agent, advisory publication,
 controller authorization and operational aviation release gates remain open.
 A supported informational report does not satisfy those gates.
+
+### Python subscription bridge evidence
+
+The integration gate now exercises a real generated TypeScript SDK bridge with
+five separate service identities, an authenticated Python webhook, persisted
+per-handler receipts, conflicting-key rejection, lost HTTP commit-response retry,
+failed webhook retry, duplicate notifications, and offline insertion/restart
+backfill. The stream handlers emit conservative availability readings and an
+insufficient-data verdict. They do not establish a completed Weather Agent,
+operational advice, controller authorization, or live provider coverage. All
+operational gates above remain open. Setup and limitations are in bridge/README.md;
+the shared interface proposal is docs/python-bridge-contract.md.

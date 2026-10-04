@@ -1,3 +1,10 @@
+import {
+  agentIdentity,
+  ingestEvent,
+  weatherReading,
+  congestionReading,
+  validationResult,
+} from './tables/streams';
 import { schema } from 'spacetimedb/server';
 
 import {
@@ -23,6 +30,11 @@ import {
 } from './tables/live';
 
 export const database = schema({
+  agentIdentity,
+  ingestEvent,
+  weatherReading,
+  congestionReading,
+  validationResult,
   servicePermissions,
   validationReports,
   flightRecords,

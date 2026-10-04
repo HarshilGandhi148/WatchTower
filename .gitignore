@@ -11,7 +11,7 @@ private_keys.json
 agent*_data.json
 
 # Python
-.venv/
+.venv
 __pycache__/
 *.py[cod]
 *.egg-info/

@@ -1,3 +1,4 @@
+import { appendIngest } from './streams';
 import { Timestamp } from 'spacetimedb';
 import { t, type InferSchema, type ReducerCtx } from 'spacetimedb/server';
 
@@ -91,6 +92,11 @@ export const ingest_weather_record = database.reducer(
       if (previous) ctx.db.weatherRecords.provider.update(row);
       else ctx.db.weatherRecords.insert(row);
     }
+    appendIngest(
+      ctx,
+      `weather:${input.observed}:${input.fetched}`,
+      JSON.parse(payloadJson),
+    );
     health(
       ctx,
       'awc',
@@ -148,5 +154,10 @@ export const report_source_failure = database.reducer(
     authorize(ctx);
     const input = parseFailure(payloadJson, millis(ctx.timestamp));
     health(ctx, input.provider, input.fetched, 'failed');
+    appendIngest(
+      ctx,
+      `failure:${input.provider}:${input.fetched}`,
+      JSON.parse(payloadJson),
+    );
   },
 );
