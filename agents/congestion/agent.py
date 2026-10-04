@@ -23,9 +23,11 @@ from datetime import UTC, datetime
 
 from uagents import Agent, Context
 
-from agents.congestion.feeds import FeedConfig, FeedSnapshot, fetch_feeds
+from agents.congestion.feeds import AeroApiFetcher, FeedConfig, FeedSnapshot, fetch_feeds
 from agents.congestion.metrics import KDTW_REFERENCE_POINT
 from agents.congestion.service import CongestionService, ProtocolError
+from data.flightaware import AeroApiConfig
+from projection.assumptions import CapacityBasis, CapacityScenario, ProjectionAssumptions
 from shared.messages import (
     AssessmentRequestMessage,
     CandidateReadyMessage,
@@ -49,6 +51,19 @@ class AgentConfig:
     validation_address: str
     feeds: FeedConfig
     cycle_seconds: float = 60.0  # plan: assessment at most once per minute per case
+    aeroapi: AeroApiConfig | None = None  # None = AeroAPI disabled
+    departure_capacity_per_hour: int | None = None  # None = projections disabled
+
+    def projection_assumptions(self) -> ProjectionAssumptions | None:
+        """Operator-configured capacity enables projections; nothing is assumed otherwise."""
+        if self.departure_capacity_per_hour is None:
+            return None
+        capacity = CapacityScenario(
+            "operator-configured departure capacity",
+            self.departure_capacity_per_hour,
+            CapacityBasis.OPERATOR_CONFIGURED,
+        )
+        return ProjectionAssumptions(capacity=capacity)
 
     @classmethod
     def from_env(cls, env: Mapping[str, str]) -> AgentConfig:
@@ -80,7 +95,19 @@ class AgentConfig:
                 center=KDTW_REFERENCE_POINT,
                 radius_nm=int(env.get("TRAFFIC_RADIUS_NM", "40")),
             ),
+            aeroapi=AeroApiConfig.from_env(env),
+            departure_capacity_per_hour=_optional_int(env, "DEPARTURE_CAPACITY_PER_HOUR"),
         )
+
+
+def _optional_int(env: Mapping[str, str], name: str) -> int | None:
+    text = env.get(name, "").strip()
+    if not text:
+        return None
+    try:
+        return int(text)
+    except ValueError as error:
+        raise ValueError(f"{name} must be a whole number") from error
 
 
 def _utcnow() -> datetime:
@@ -101,7 +128,7 @@ def build_agent(
     config: AgentConfig,
     *,
     service: CongestionService | None = None,
-    fetch: Callable[[FeedConfig], FeedSnapshot] = fetch_feeds,
+    fetch: Callable[[FeedConfig], FeedSnapshot] | None = None,
     loop: asyncio.AbstractEventLoop | None = None,
 ) -> Agent:
     """Prepare the congestion agent for runtime/bureau.py (does not start it)."""
@@ -113,7 +140,14 @@ def build_agent(
         publish_agent_details=False,
         report_events=False,
     )
-    svc = service or CongestionService()
+    svc = service or CongestionService(projection=config.projection_assumptions())
+    if fetch is None:
+        flights = (
+            AeroApiFetcher(config.aeroapi, config.feeds.user_agent) if config.aeroapi else None
+        )
+
+        def fetch(feed_config: FeedConfig) -> FeedSnapshot:
+            return fetch_feeds(feed_config, flights=flights)
 
     async def cycle(ctx: Context) -> None:
         feeds = await asyncio.to_thread(fetch, config.feeds)  # blocking I/O off the loop
