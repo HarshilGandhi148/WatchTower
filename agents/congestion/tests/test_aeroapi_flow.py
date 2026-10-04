@@ -9,6 +9,7 @@ from agents.congestion.agent import AgentConfig
 from agents.congestion.candidates import flow_snapshot_from_demand, project
 from agents.congestion.feeds import FeedSnapshot
 from agents.congestion.metrics import demand_windows, departure_backlog
+from agents.congestion.projections import ProjectionSettings
 from agents.congestion.service import CongestionService
 from agents.congestion.tests.test_agent import ENV
 from data.flightaware import Endpoint, parse_flights
@@ -168,7 +169,25 @@ class ServiceWithFlightsTests(TestCase):
 
 
 class AgentConfigTests(TestCase):
-    def test_paid_settings_do_not_activate_polling_or_unstored_projections(self) -> None:
+    def test_paid_settings_do_not_activate_polling(self) -> None:
         default = AgentConfig.from_env(ENV)
-        configured = AgentConfig.from_env({**ENV, **AERO_ENV, "DEPARTURE_CAPACITY_PER_HOUR": "36"})
-        self.assertEqual(default, configured)
+        self.assertEqual(default, AgentConfig.from_env({**ENV, **AERO_ENV}))
+        self.assertIsNone(default.projection)
+
+    def test_projections_need_capacity_and_both_backlog_settings(self) -> None:
+        settings = {
+            "DEPARTURE_CAPACITY_PER_HOUR": "36",
+            "DEPARTURE_BACKLOG_UPSTREAM": "4",
+            "DEPARTURE_BACKLOG_RUNWAY_QUEUE": "2",
+        }
+        config = AgentConfig.from_env({**ENV, **settings})
+        self.assertEqual(config.projection, ProjectionSettings(36, 4, 2))
+        for partial in (
+            {"DEPARTURE_CAPACITY_PER_HOUR": "36"},
+            {**settings, "DEPARTURE_BACKLOG_UPSTREAM": " "},
+            {**settings, "DEPARTURE_BACKLOG_RUNWAY_QUEUE": "two"},
+            {**settings, "DEPARTURE_CAPACITY_PER_HOUR": "3"},
+            {**settings, "DEPARTURE_BACKLOG_UPSTREAM": "-1"},
+        ):
+            with self.subTest(partial=partial), self.assertRaises(ValueError):
+                AgentConfig.from_env({**ENV, **partial})

@@ -79,9 +79,13 @@ class PersistentCongestionService:
             await self.initialize()
             step = self.service.advance(now)
             for ready in step.ready:
-                await self.adapter.save_candidate(
-                    self.service.candidates[ready.candidate_id], ready
-                )
+                candidate = self.service.candidates[ready.candidate_id]
+                if candidate.projection_id is not None:
+                    # submit_flow_candidate requires the cited projection to exist; the
+                    # payload is deterministic, so a retried store is identical.
+                    prepared = self.service.projections[candidate.projection_id]
+                    await self.adapter.store_projection(prepared.payload())
+                await self.adapter.save_candidate(candidate, ready)
                 self.service.mark_persisted(ready)
             deliveries = await self.adapter.pending_deliveries()
         # Notifications can repeat until a durable validator receipt. No provider or

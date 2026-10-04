@@ -109,6 +109,8 @@ class CandidateInputs:
     faa: FaaStatusSnapshot | None = None
     comparison: ProjectionComparison | None = None
     thresholds: ReviewThresholds = ReviewThresholds()
+    # False when the projection's initial backlog is an operator setting, not observed.
+    backlog_observed: bool = True
 
 
 def flow_snapshot_from_demand(
@@ -364,6 +366,8 @@ def _assumptions(inputs: CandidateInputs, projected: bool) -> tuple[str, ...]:
                 f"capacity scenario '{c.name}': {c.effective_capacity_per_hour}/hour ({c.basis})"
             )
         notes.append(f"projection model {comparison.model_version}; illustrative, not predictive")
+        if not inputs.backlog_observed:
+            notes.append("initial departure backlog is operator-configured, not observed")
         notes.append(f"demand basis: {comparison.demand_basis}")
         if comparison.simplified_instant_transfer:
             notes.append("simplified model: released aircraft reach the runway queue instantly")
@@ -410,6 +414,11 @@ def _quality(
             parts.append(EvidenceQuality.LIMITED)
         if inputs.weather_signal is WeatherSignal.UNKNOWN:
             parts.append(EvidenceQuality.LIMITED)
+    projected = inputs.comparison is not None and (
+        inputs.comparison.status is ProjectionStatus.COMPUTED
+    )
+    if projected and not inputs.backlog_observed:
+        parts.append(EvidenceQuality.LIMITED)  # projected numbers start from a set backlog
     if not (nearby_known or demand_known):
         parts.append(EvidenceQuality.LIMITED)  # FAA-only or weather-only context
     return _worse(*parts)

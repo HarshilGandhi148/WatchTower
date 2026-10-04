@@ -29,8 +29,32 @@ token belongs in browser configuration.
 
 Both assessment rounds use the snapshot's original analysis window. Restart closes
 unfinished assessments and resumes saved deliveries. No weather timeout is submitted
-without a stored finding. Departure metrics and projections remain unavailable without
-required airport demand and model inputs; paid polling remains disabled. Weather and
-validation domain implementations are still owner workstreams.
+without a stored finding. Paid polling remains disabled. Weather and validation domain
+implementations are still owner workstreams.
+
+## Projections from stored snapshots
+
+projections.py prepares one baseline-vs-proposal projection per snapshot when all of
+`DEPARTURE_CAPACITY_PER_HOUR`, `DEPARTURE_BACKLOG_UPSTREAM` and
+`DEPARTURE_BACKLOG_RUNWAY_QUEUE` are set. Setting only some of them is a configuration
+error.
+
+- **Demand:** the snapshot's stored FlightAware batch only: confirmed, uncancelled
+  departures with a runway time, in five-minute buckets spread evenly per minute. This is
+  exactly what the `store_projection` reducer re-derives. The batch must be at most
+  5 minutes old at the window start. Missing or stale demand gives no projection, never
+  zero-valued results.
+- **Backlog:** stored flight records have no gate times, so the initial upstream waiting
+  and runway queue are operator settings, labelled "not observed". Candidates citing such a
+  projection have limited quality and say so in their assumptions.
+- **Proposal:** release at the configured capacity for the whole horizon. The baseline
+  has no response.
+- **Persistence:** the payload (`projection_id = proj-<snapshot_id>`) is stored through
+  `adapter.store_projection` before the candidate that cites it. Retries resend the
+  identical payload. Validation recomputes it on retrieval.
+
+Live projections need stored FlightAware batches, and FlightAware ingestion is not
+scheduled yet. Observed backlog would need gate times in stored flight records; both
+are database/ingestion changes outside this folder.
 
 See [setup and verification](../../docs/congestion-spacetime.md).
