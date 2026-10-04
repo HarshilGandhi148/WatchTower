@@ -53,9 +53,9 @@ WatchTower aims to make useful information easier for controllers to act on. If 
 
 WatchTower is a prototype. The dashboard, a local backend for weather and aircraft observations, and communication tools for the three agents are implemented. You can explore the review experience in a separate sample-data demo.
 
-The complete automatic workflow using real flight data is still being connected: live data collection, the weather and congestion agents' analysis, calculated previews, and the backend for controller decisions remain unfinished. The demo uses sample data and illustrative aircraft paths. WatchTower is not a certified air traffic control system.
+Shared ADS-B/FAA polling, immutable database snapshots, durable congestion candidates, and validation delivery receipts are implemented and tested against a local database. The Weather Agent, domain validation/publication, and backend controller decisions remain unfinished. The demo uses sample data and illustrative aircraft paths. WatchTower is not a certified air traffic control system.
 
-See the [technical plan](full_technical_plan.md) and [remaining release checks](docs/quality-control.md) for details.
+See the [technical plan](full_technical_plan.md) and [remaining release checks](docs/quality-control.md) for details. See the [congestion integration guide](docs/congestion-spacetime.md) for the persistence flow, service roles, and TEST coverage.
 
 ## How to use it
 
@@ -104,7 +104,7 @@ In another terminal, from the project folder:
 spacetime dev --delete-data=never
 ```
 
-Confirm the publish target is the local server, then open the dashboard URL printed in the terminal, usually **http://localhost:5173**. Until real data collection is connected, the dashboard will show no live observations. This mode currently supports viewing observations, not the complete suggestion-and-approval workflow.
+Confirm the publish target is the local server, then open the dashboard URL printed in the terminal, usually **http://localhost:5173**. Before ingestion is started, the dashboard will show no live observations. This mode currently supports viewing observations, not the complete suggestion-and-approval workflow.
 
 Keep API keys and tokens out of Git and browser settings. For data access, configuration, and the remaining startup steps, follow the [development guide](docs/development.md).
 

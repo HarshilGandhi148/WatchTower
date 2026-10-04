@@ -28,9 +28,49 @@ export const set_ingestion_permission = database.reducer(
     const previous = ctx.db.servicePermissions.identity.find(identity);
     if (previous?.role === 'admin')
       throw new Error('Administrator cannot be changed');
+    if (enabled && previous && previous.role !== 'ingestion')
+      throw new Error('Identity already has another role');
     if (enabled && !previous)
       ctx.db.servicePermissions.insert({ identity, role: 'ingestion' });
     if (!enabled && previous)
       ctx.db.servicePermissions.identity.delete(identity);
+  },
+);
+
+export {
+  register_assessment_request,
+  ingest_flight_records,
+  ingest_feed_batch,
+  create_evidence_snapshot,
+  submit_weather_assessment,
+  submit_flow_candidate,
+  store_projection,
+  record_candidate_receipt,
+  expire_deliveries,
+  close_unfinished_cases,
+  prune_live_observations,
+} from './reducers/evidence';
+
+export const set_service_permission = database.reducer(
+  { identityHex: t.string(), role: t.string(), enabled: t.bool() },
+  (ctx, { identityHex, role, enabled }) => {
+    requireRole(
+      ctx.db.servicePermissions.identity.find(ctx.sender)?.role,
+      'admin',
+    );
+    if (
+      !/^[a-f0-9]{64}$/.test(identityHex) ||
+      !['ingestion', 'weather', 'congestion', 'validation'].includes(role)
+    )
+      throw new Error('Invalid service grant');
+    const identity = Identity.fromString(identityHex);
+    const previous = ctx.db.servicePermissions.identity.find(identity);
+    if (previous?.role === 'admin')
+      throw new Error('Administrator cannot be changed');
+    if (enabled) {
+      if (previous)
+        ctx.db.servicePermissions.identity.update({ identity, role });
+      else ctx.db.servicePermissions.insert({ identity, role });
+    } else if (previous) ctx.db.servicePermissions.identity.delete(identity);
   },
 );

@@ -16,24 +16,21 @@ Keep projection functions deterministic and free of provider/database access.
 agent.py is a factory for runtime/bureau.py (see docs/orchestration.md); it never starts a
 server or registers an endpoint. service.py implements congestion's side of the protocol:
 open a case with validation, answer round 1/2 by asking weather, then send CandidateReady
-references. feeds.py is an interim live fetch of the public ADS-B and FAA feeds until
-ingestion and the DB adapter exist. Configuration names: CONGESTION_AGENT_SEED,
-WEATHER_AGENT_ADDRESS, VALIDATION_AGENT_ADDRESS, DATA_USER_AGENT (never hardcode a seed).
+references. feeds.py reconstructs parser inputs from copied database batches; it does
+no network I/O. persistence.py creates snapshots, serializes concurrent transitions,
+saves each candidate and delivery atomically, and retries pending notifications until
+receipt or expiry. A failed save remains retryable with the same payload and ID.
 
-## AeroAPI demand, backlog and projections
+Configuration: CONGESTION_AGENT_SEED, WEATHER_AGENT_ADDRESS,
+VALIDATION_AGENT_ADDRESS, SPACETIMEDB_HTTP_URL, SPACETIMEDB_DATABASE,
+SPACETIMEDB_CONGESTION_TOKEN and the shared airport center/radius. Public feeds are
+polled independently by data/ingestion.py with the ingestion identity. No service
+token belongs in browser configuration.
 
-With `ENABLE_FLIGHTAWARE=true`, `FLIGHTAWARE_API_KEY`, `FLIGHTAWARE_BUDGET_USD` and
-`FLIGHTAWARE_COST_PER_RESULT_SET_USD` set, each cycle uses KDTW scheduled departures and
-arrivals (data/flightaware.py), refreshed at most every 5 minutes through a budget and
-per-minute rate guard. Any refusal, failure or truncated page makes demand unavailable,
-never a partial count. Departures that pushed back but are not airborne form the runway
-queue; departures past scheduled gate-out but not pushed back form upstream waiting; both
-are the projection's initial backlog and are excluded from future demand.
-`DEPARTURE_CAPACITY_PER_HOUR` (operator-configured) enables projections comparing the
-baseline with releasing at that rate. Unset, demand is still reported but not projected.
+Both assessment rounds use the snapshot's original analysis window. Restart closes
+unfinished assessments and resumes saved deliveries. No weather timeout is submitted
+without a stored finding. Departure metrics and projections remain unavailable without
+required airport demand and model inputs; paid polling remains disabled. Weather and
+validation domain implementations are still owner workstreams.
 
-Still to verify with a key: AeroAPI field names, query parameters and the start/end filter
-semantics (see the VERIFY notes in data/flightaware.py).
-
-Not done yet: candidates are kept in memory (validation cannot load them across processes
-until the DB adapter exists), and weather timeouts are not submitted.
+See [setup and verification](../../docs/congestion-spacetime.md).

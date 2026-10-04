@@ -34,15 +34,38 @@ import {
 } from "spacetimedb";
 
 // Import all reducer arg schemas
+import CloseUnfinishedCasesReducer from "./close_unfinished_cases_reducer";
+import CreateEvidenceSnapshotReducer from "./create_evidence_snapshot_reducer";
+import ExpireDeliveriesReducer from "./expire_deliveries_reducer";
 import IngestAircraftBatchReducer from "./ingest_aircraft_batch_reducer";
+import IngestFeedBatchReducer from "./ingest_feed_batch_reducer";
+import IngestFlightRecordsReducer from "./ingest_flight_records_reducer";
 import IngestWeatherRecordReducer from "./ingest_weather_record_reducer";
+import PruneLiveObservationsReducer from "./prune_live_observations_reducer";
+import RecordCandidateReceiptReducer from "./record_candidate_receipt_reducer";
+import RegisterAssessmentRequestReducer from "./register_assessment_request_reducer";
 import ReportSourceFailureReducer from "./report_source_failure_reducer";
 import SetIngestionPermissionReducer from "./set_ingestion_permission_reducer";
+import SetServicePermissionReducer from "./set_service_permission_reducer";
+import StoreProjectionReducer from "./store_projection_reducer";
+import SubmitFlowCandidateReducer from "./submit_flow_candidate_reducer";
+import SubmitWeatherAssessmentReducer from "./submit_weather_assessment_reducer";
 
 // Import all procedure arg schemas
 
 // Import all table schema definitions
+import AgentFindingsRow from "./agent_findings_table";
 import AircraftObservationsRow from "./aircraft_observations_table";
+import AirportEventsRow from "./airport_events_table";
+import AssessmentRequestsRow from "./assessment_requests_table";
+import EvidenceRecordsRow from "./evidence_records_table";
+import EvidenceSnapshotsRow from "./evidence_snapshots_table";
+import FeedBatchesRow from "./feed_batches_table";
+import FlightRecordsRow from "./flight_records_table";
+import FlowCandidatesRow from "./flow_candidates_table";
+import LatestFeedsRow from "./latest_feeds_table";
+import PendingDeliveriesRow from "./pending_deliveries_table";
+import ProjectionResultsRow from "./projection_results_table";
 import SourceHealthRow from "./source_health_table";
 import WeatherRecordsRow from "./weather_records_table";
 
@@ -50,6 +73,21 @@ import WeatherRecordsRow from "./weather_records_table";
 
 /** The schema information for all tables in this module. This is defined the same was as the tables would have been defined in the server. */
 const tablesSchema = __schema({
+  agentFindings: __table({
+    name: 'agent_findings',
+    indexes: [
+      { accessor: 'caseRound', name: 'agent_findings_case_round_idx_btree', algorithm: 'btree', columns: [
+        'caseRound',
+      ] },
+      { accessor: 'findingId', name: 'agent_findings_finding_id_idx_btree', algorithm: 'btree', columns: [
+        'findingId',
+      ] },
+    ],
+    constraints: [
+      { name: 'agent_findings_case_round_key', constraint: 'unique', columns: ['caseRound'] },
+      { name: 'agent_findings_finding_id_key', constraint: 'unique', columns: ['findingId'] },
+    ],
+  }, AgentFindingsRow),
   aircraftObservations: __table({
     name: 'aircraft_observations',
     indexes: [
@@ -61,6 +99,130 @@ const tablesSchema = __schema({
       { name: 'aircraft_observations_aircraft_id_key', constraint: 'unique', columns: ['aircraftId'] },
     ],
   }, AircraftObservationsRow),
+  airportEvents: __table({
+    name: 'airport_events',
+    indexes: [
+      { accessor: 'eventId', name: 'airport_events_event_id_idx_btree', algorithm: 'btree', columns: [
+        'eventId',
+      ] },
+    ],
+    constraints: [
+      { name: 'airport_events_event_id_key', constraint: 'unique', columns: ['eventId'] },
+    ],
+  }, AirportEventsRow),
+  assessmentRequests: __table({
+    name: 'assessment_requests',
+    indexes: [
+      { accessor: 'caseRound', name: 'assessment_requests_case_round_idx_btree', algorithm: 'btree', columns: [
+        'caseRound',
+      ] },
+    ],
+    constraints: [
+      { name: 'assessment_requests_case_round_key', constraint: 'unique', columns: ['caseRound'] },
+    ],
+  }, AssessmentRequestsRow),
+  evidenceRecords: __table({
+    name: 'evidence_records',
+    indexes: [
+      { accessor: 'evidenceId', name: 'evidence_records_evidence_id_idx_btree', algorithm: 'btree', columns: [
+        'evidenceId',
+      ] },
+    ],
+    constraints: [
+      { name: 'evidence_records_evidence_id_key', constraint: 'unique', columns: ['evidenceId'] },
+    ],
+  }, EvidenceRecordsRow),
+  evidenceSnapshots: __table({
+    name: 'evidence_snapshots',
+    indexes: [
+      { accessor: 'caseId', name: 'evidence_snapshots_case_id_idx_btree', algorithm: 'btree', columns: [
+        'caseId',
+      ] },
+      { accessor: 'closed', name: 'evidence_snapshots_closed_idx_btree', algorithm: 'btree', columns: [
+        'closed',
+      ] },
+      { accessor: 'snapshotId', name: 'evidence_snapshots_snapshot_id_idx_btree', algorithm: 'btree', columns: [
+        'snapshotId',
+      ] },
+    ],
+    constraints: [
+      { name: 'evidence_snapshots_case_id_key', constraint: 'unique', columns: ['caseId'] },
+      { name: 'evidence_snapshots_snapshot_id_key', constraint: 'unique', columns: ['snapshotId'] },
+    ],
+  }, EvidenceSnapshotsRow),
+  feedBatches: __table({
+    name: 'feed_batches',
+    indexes: [
+      { accessor: 'batchId', name: 'feed_batches_batch_id_idx_btree', algorithm: 'btree', columns: [
+        'batchId',
+      ] },
+    ],
+    constraints: [
+      { name: 'feed_batches_batch_id_key', constraint: 'unique', columns: ['batchId'] },
+    ],
+  }, FeedBatchesRow),
+  flightRecords: __table({
+    name: 'flight_records',
+    indexes: [
+      { accessor: 'batchId', name: 'flight_records_batch_id_idx_btree', algorithm: 'btree', columns: [
+        'batchId',
+      ] },
+    ],
+    constraints: [
+      { name: 'flight_records_batch_id_key', constraint: 'unique', columns: ['batchId'] },
+    ],
+  }, FlightRecordsRow),
+  flowCandidates: __table({
+    name: 'flow_candidates',
+    indexes: [
+      { accessor: 'candidateId', name: 'flow_candidates_candidate_id_idx_btree', algorithm: 'btree', columns: [
+        'candidateId',
+      ] },
+      { accessor: 'caseRound', name: 'flow_candidates_case_round_idx_btree', algorithm: 'btree', columns: [
+        'caseRound',
+      ] },
+    ],
+    constraints: [
+      { name: 'flow_candidates_candidate_id_key', constraint: 'unique', columns: ['candidateId'] },
+      { name: 'flow_candidates_case_round_key', constraint: 'unique', columns: ['caseRound'] },
+    ],
+  }, FlowCandidatesRow),
+  latestFeeds: __table({
+    name: 'latest_feeds',
+    indexes: [
+      { accessor: 'provider', name: 'latest_feeds_provider_idx_btree', algorithm: 'btree', columns: [
+        'provider',
+      ] },
+    ],
+    constraints: [
+      { name: 'latest_feeds_provider_key', constraint: 'unique', columns: ['provider'] },
+    ],
+  }, LatestFeedsRow),
+  pendingDeliveries: __table({
+    name: 'pending_deliveries',
+    indexes: [
+      { accessor: 'candidateId', name: 'pending_deliveries_candidate_id_idx_btree', algorithm: 'btree', columns: [
+        'candidateId',
+      ] },
+      { accessor: 'status', name: 'pending_deliveries_status_idx_btree', algorithm: 'btree', columns: [
+        'status',
+      ] },
+    ],
+    constraints: [
+      { name: 'pending_deliveries_candidate_id_key', constraint: 'unique', columns: ['candidateId'] },
+    ],
+  }, PendingDeliveriesRow),
+  projectionResults: __table({
+    name: 'projection_results',
+    indexes: [
+      { accessor: 'projectionId', name: 'projection_results_projection_id_idx_btree', algorithm: 'btree', columns: [
+        'projectionId',
+      ] },
+    ],
+    constraints: [
+      { name: 'projection_results_projection_id_key', constraint: 'unique', columns: ['projectionId'] },
+    ],
+  }, ProjectionResultsRow),
   sourceHealth: __table({
     name: 'source_health',
     indexes: [
@@ -87,10 +249,22 @@ const tablesSchema = __schema({
 
 /** The schema information for all reducers in this module. This is defined the same way as the reducers would have been defined in the server, except the body of the reducer is omitted in code generation. */
 const reducersSchema = __reducers(
+  __reducerSchema("close_unfinished_cases", CloseUnfinishedCasesReducer),
+  __reducerSchema("create_evidence_snapshot", CreateEvidenceSnapshotReducer),
+  __reducerSchema("expire_deliveries", ExpireDeliveriesReducer),
   __reducerSchema("ingest_aircraft_batch", IngestAircraftBatchReducer),
+  __reducerSchema("ingest_feed_batch", IngestFeedBatchReducer),
+  __reducerSchema("ingest_flight_records", IngestFlightRecordsReducer),
   __reducerSchema("ingest_weather_record", IngestWeatherRecordReducer),
+  __reducerSchema("prune_live_observations", PruneLiveObservationsReducer),
+  __reducerSchema("record_candidate_receipt", RecordCandidateReceiptReducer),
+  __reducerSchema("register_assessment_request", RegisterAssessmentRequestReducer),
   __reducerSchema("report_source_failure", ReportSourceFailureReducer),
   __reducerSchema("set_ingestion_permission", SetIngestionPermissionReducer),
+  __reducerSchema("set_service_permission", SetServicePermissionReducer),
+  __reducerSchema("store_projection", StoreProjectionReducer),
+  __reducerSchema("submit_flow_candidate", SubmitFlowCandidateReducer),
+  __reducerSchema("submit_weather_assessment", SubmitWeatherAssessmentReducer),
 );
 
 /** The schema information for all procedures in this module. This is defined the same way as the procedures would have been defined in the server. */

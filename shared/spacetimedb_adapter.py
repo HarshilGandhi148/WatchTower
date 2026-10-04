@@ -6,12 +6,14 @@ from collections.abc import Callable, Mapping
 from dataclasses import asdict
 from datetime import UTC, datetime, timedelta
 from http.client import HTTPMessage
-from typing import Literal
+from typing import Any, Literal
 from urllib.error import HTTPError, URLError
 from urllib.request import Request
 
-from shared.contracts import AircraftBatch, SourceFailure, WeatherRecord, _utc_millis
-from shared.settings import SpacetimeSettings
+from shared.contracts import AircraftBatch, FlowCandidate, SourceFailure, WeatherRecord, _utc_millis
+from shared.orchestration import AssessmentRequest, CandidateReady
+from shared.persistence import WeatherFinding, candidate_from_dict, ready_from_dict, storage_json
+from shared.settings import AirportConfig, SpacetimeSettings
 
 type ObservationTable = Literal["weather_records", "aircraft_observations", "source_health"]
 type Transport = Callable[[str, bytes, Mapping[str, str], float], bytes]
@@ -164,7 +166,7 @@ class SpacetimeAdapter:
         if table not in {"weather_records", "aircraft_observations", "source_health"}:
             raise ValueError("Unsupported observation table")
         data = await asyncio.to_thread(
-            self._post, "sql", f"SELECT * FROM {table} LIMIT 1000".encode(), "text/plain"
+            self._post, "sql", f"SELECT * FROM {table} LIMIT 1001".encode(), "text/plain"
         )
         try:
             results = json.loads(data)
@@ -173,6 +175,8 @@ class SpacetimeAdapter:
             result = results[0]
             columns = [element["name"]["some"] for element in result["schema"]["elements"]]
             rows = result["rows"]
+            if isinstance(rows, list) and len(rows) > 1000:
+                raise SpacetimeError("incomplete read: more than 1000 records")
             if (
                 not all(isinstance(name, str) for name in columns)
                 or len(columns) != len(set(columns))
@@ -190,3 +194,132 @@ class SpacetimeAdapter:
             ]
         except (ValueError, KeyError, TypeError, IndexError, OverflowError):
             raise SpacetimeError("invalid SQL response") from None
+
+    async def call(self, reducer: str, value: object | None = None) -> None:
+        """Only internal, statically selected reducer names; errors remain redacted."""
+        import re
+
+        if not re.fullmatch(r"[a-z_]+", reducer):
+            raise ValueError("Invalid reducer name")
+        body = json.dumps([] if value is None else [storage_json(value)]).encode()
+        await asyncio.to_thread(self._post, f"call/{reducer}", body, "application/json")
+
+    async def read_records(
+        self,
+        table: str,
+        *,
+        key: str | None = None,
+        value: str | None = None,
+        pending_only: bool = False,
+    ) -> list[dict[str, Any]]:
+        allowed = {
+            "evidence_snapshots": "snapshot_id",
+            "feed_batches": "batch_id",
+            "evidence_records": "evidence_id",
+            "agent_findings": "finding_id",
+            "flow_candidates": "candidate_id",
+            "pending_deliveries": "candidate_id",
+            "projection_results": "projection_id",
+            "assessment_requests": "case_round",
+            "airport_events": "event_id",
+            "flight_records": "batch_id",
+        }
+        if table not in allowed or (key is not None and key != allowed[table]):
+            raise ValueError("Unsupported storage query")
+        query = f"SELECT * FROM {table}"
+        if key is not None:
+            if value is None:
+                raise ValueError("Missing query key")
+            # SQL literals escape single quotes; table/column names are allowlisted.
+            query += f" WHERE {key} = '{value.replace(chr(39), chr(39) * 2)}'"
+        if pending_only:
+            if table != "pending_deliveries" or key is not None:
+                raise ValueError("Invalid pending query")
+            query += " WHERE status = 'pending'"
+        query += " LIMIT 1001"
+        data = await asyncio.to_thread(self._post, "sql", query.encode(), "text/plain")
+        try:
+            (result,) = json.loads(data)
+            columns = [entry["name"]["some"] for entry in result["schema"]["elements"]]
+            rows = result["rows"]
+            if isinstance(rows, list) and len(rows) > 1000:
+                raise SpacetimeError("incomplete read: more than 1000 records")
+            if (
+                not all(isinstance(name, str) and name for name in columns)
+                or len(set(columns)) != len(columns)
+                or not isinstance(rows, list)
+                or any(not isinstance(row, list) or len(row) != len(columns) for row in rows)
+            ):
+                raise ValueError
+            return [
+                {name: _decode_column(name, v) for name, v in zip(columns, row, strict=True)}
+                for row in rows
+            ]
+        except (ValueError, TypeError, KeyError, IndexError, OverflowError):
+            raise SpacetimeError("invalid SQL response") from None
+
+    async def load_record(self, table: str, key: str, value: str) -> dict[str, Any]:
+        rows = await self.read_records(table, key=key, value=value)
+        if len(rows) != 1:
+            raise SpacetimeError("missing stored record")
+        return rows[0]
+
+    async def create_snapshot(
+        self,
+        snapshot_id: str,
+        case_id: str,
+        configuration: AirportConfig,
+        start: datetime,
+        end: datetime,
+        expires: datetime,
+    ) -> dict[str, Any]:
+        await self.call(
+            "create_evidence_snapshot",
+            {
+                "snapshot_id": snapshot_id,
+                "case_id": case_id,
+                "configuration": configuration,
+                "window_start_utc": start,
+                "window_end_utc": end,
+                "expires_at_utc": expires,
+            },
+        )
+        return await self.load_snapshot(snapshot_id)
+
+    async def load_snapshot(self, snapshot_id: str) -> dict[str, Any]:
+        row = await self.load_record("evidence_snapshots", "snapshot_id", snapshot_id)
+        return dict(json.loads(row["content_json"]))
+
+    async def register_assessment(self, request: AssessmentRequest) -> None:
+        await self.call("register_assessment_request", request)
+
+    async def save_weather(self, finding: WeatherFinding) -> None:
+        await self.call("submit_weather_assessment", finding)
+
+    async def save_candidate(self, candidate: FlowCandidate, ready: CandidateReady) -> None:
+        await self.call("submit_flow_candidate", {"candidate": candidate, "ready": ready})
+
+    async def load_candidate(self, candidate_id: str) -> FlowCandidate:
+        row = await self.load_record("flow_candidates", "candidate_id", candidate_id)
+        return candidate_from_dict(json.loads(row["content_json"]))
+
+    async def pending_deliveries(self) -> tuple[CandidateReady, ...]:
+        await self.call("expire_deliveries")
+        rows = await self.read_records("pending_deliveries", pending_only=True)
+        return tuple(
+            ready_from_dict(json.loads(row["content_json"]))
+            for row in rows
+            if row["status"] == "pending"
+        )
+
+    async def receipt(self, ready: CandidateReady) -> None:
+        await self.call(
+            "record_candidate_receipt", {"candidate_id": ready.candidate_id, "ready": ready}
+        )
+
+    async def store_projection(self, projection: Mapping[str, object]) -> None:
+        await self.call("store_projection", projection)
+
+    async def load_projection(self, projection_id: str) -> dict[str, Any]:
+        row = await self.load_record("projection_results", "projection_id", projection_id)
+        return dict(json.loads(row["content_json"]))

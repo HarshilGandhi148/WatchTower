@@ -6,6 +6,7 @@ from uagents import Agent, Bureau
 
 from agents.validation.orchestrator import Orchestrator
 from agents.validation.protocol import PersistOutcome, ValidateCandidate, register_orchestration
+from agents.validation.storage import ValidationStorage
 from shared.contracts import AgentName
 
 
@@ -37,11 +38,16 @@ def build_coordinated_bureau(
     persist: PersistOutcome,
     port: int = 8000,
     endpoint: str | None = None,
+    storage: ValidationStorage | None = None,
 ) -> Bureau:
     """Wire orchestration into validation before running the same three identities."""
     bureau = build_bureau(agents, port=port, endpoint=endpoint)
     coordinator = Orchestrator({role: agent.address for role, agent in agents.items()})
     register_orchestration(
-        agents[AgentName.VALIDATION], coordinator, validate=validate, persist=persist
+        agents[AgentName.VALIDATION],
+        coordinator,
+        validate=validate,
+        persist=persist,
+        storage=storage,
     )
     return bureau

@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest import TestCase
 
-from agents.congestion.feeds import FeedConfig, FeedSnapshot, fetch_feeds
+from agents.congestion.feeds import FeedSnapshot
 from agents.congestion.service import CongestionService, ProtocolError
 from data.adsb import parse_point_response
 from shared.contracts import AgentName, CandidateStatus, MessageEnvelope
@@ -14,14 +14,7 @@ from shared.orchestration import AssessmentRequest
 
 ROOT = Path(__file__).resolve().parents[3]
 ADSB_BODY = (ROOT / "tests" / "fixtures" / "adsb" / "point_response.json").read_bytes()
-FAA_BODY = (ROOT / "tests" / "fixtures" / "faa_status" / "events.xml").read_bytes()
 NOW = datetime(2026, 9, 21, 4, 53, 21, tzinfo=UTC)
-FEED_CONFIG = FeedConfig(
-    "https://api.adsb.lol",
-    "https://nasstatus.faa.gov/api/airport-status-information",
-    "WatchTower-tests (TEST)",
-    (42.2122, -83.3533),
-)
 
 
 def at(seconds: float) -> datetime:
@@ -63,7 +56,17 @@ def weather_reply(
 
 class ServiceProtocolTests(TestCase):
     def setUp(self) -> None:
-        self.feeds = FeedSnapshot(parse_point_response(json.loads(ADSB_BODY), NOW), None)
+        self.feeds = FeedSnapshot(
+            parse_point_response(json.loads(ADSB_BODY), NOW),
+            None,
+            snapshot_id="TEST-snapshot",
+            case_id="TEST-case",
+            evidence_ids=("TEST-adsb",),
+            traffic_evidence_id="TEST-adsb",
+            window_start_utc=NOW,
+            window_end_utc=NOW + timedelta(minutes=15),
+            expires_at_utc=at(120),
+        )
         self.service = CongestionService()
         self.opening = self.service.start_cycle(self.feeds, NOW)
 
@@ -80,10 +83,8 @@ class ServiceProtocolTests(TestCase):
 
     def test_opening_fixes_snapshot_and_evidence(self) -> None:
         o = self.opening
-        self.assertEqual(
-            (o.sender_agent, o.case_id), (AgentName.CONGESTION, "case-20260921T045321Z")
-        )
-        self.assertEqual(o.evidence_ids, ("adsb-20260921T045321Z",))
+        self.assertEqual((o.sender_agent, o.case_id), (AgentName.CONGESTION, "TEST-case"))
+        self.assertEqual(o.evidence_ids, ("TEST-adsb",))
         self.assertEqual(self.service.start_cycle(self.feeds, NOW), o)  # same snapshot: idempotent
 
     def test_round_one_produces_one_weather_request_and_retries_reuse_it(self) -> None:
@@ -104,11 +105,13 @@ class ServiceProtocolTests(TestCase):
         self.assertEqual(e.valid_until_utc, at(61))
         self.assertEqual((ready.weather_assessment_id, ready.assessment_round), ("wx-1", 1))
         self.assertIn(ready.candidate_id, self.service.candidates)
+        self.service.mark_persisted(ready)
         self.assertEqual(self.service.advance(at(5)).ready, ())  # each round sent once
 
     def test_round_two_reassesses_once_and_replies_to_the_new_request(self) -> None:
         self.answer_round_one()
         (first,) = self.service.advance(at(4)).ready
+        self.service.mark_persisted(first)
         second_request = validation_request(self.opening, 2, reply_to=first.envelope.message_id)
         weather = self.service.on_assessment_request(second_request, at(5))
         self.assertEqual(weather.attempt, 2)
@@ -160,7 +163,9 @@ class ServiceProtocolTests(TestCase):
 
     def test_failed_feeds_still_open_a_case_with_no_evidence(self) -> None:
         service = CongestionService()
-        opening = service.start_cycle(FeedSnapshot(None, None, ("adsb: down",)), NOW)
+        opening = service.start_cycle(
+            replace(self.feeds, adsb=None, evidence_ids=(), traffic_evidence_id=None), NOW
+        )
         self.assertEqual(opening.evidence_ids, ())
         weather = service.on_assessment_request(validation_request(opening), at(2))
         service.on_weather_reply(
@@ -173,43 +178,3 @@ class ServiceProtocolTests(TestCase):
         self.assertEqual(
             service.candidates[ready.candidate_id].status, CandidateStatus.INSUFFICIENT_DATA
         )
-
-
-def fake_get(responses: dict[str, bytes | Exception]):  # type: ignore[no-untyped-def]
-    calls: list[tuple[str, str]] = []
-
-    def get(url: str, user_agent: str) -> bytes:
-        calls.append((url, user_agent))
-        for prefix, response in responses.items():
-            if url.startswith(prefix):
-                if isinstance(response, Exception):
-                    raise response
-                return response
-        raise AssertionError(f"unexpected url {url}")
-
-    get.calls = calls  # type: ignore[attr-defined]
-    return get
-
-
-class FeedTests(TestCase):
-    def test_both_feeds_parse_and_send_the_user_agent(self) -> None:
-        get = fake_get({"https://api.adsb.lol": ADSB_BODY, "https://nasstatus": FAA_BODY})
-        feeds = fetch_feeds(FEED_CONFIG, get, clock=lambda: NOW)
-        assert feeds.adsb and feeds.faa
-        self.assertEqual(feeds.errors, ())
-        self.assertIn("/v2/point/42.2122/-83.3533/40", get.calls[0][0])
-        self.assertTrue(all(ua == "WatchTower-tests (TEST)" for _, ua in get.calls))
-
-    def test_one_failing_feed_is_unknown_and_the_other_still_works(self) -> None:
-        get = fake_get(
-            {"https://api.adsb.lol": OSError("timed out"), "https://nasstatus": FAA_BODY}
-        )
-        feeds = fetch_feeds(FEED_CONFIG, get, clock=lambda: NOW)
-        self.assertIsNone(feeds.adsb)
-        self.assertIsNotNone(feeds.faa)
-        self.assertEqual(len(feeds.errors), 1)
-
-    def test_malformed_bodies_are_errors_not_empty_feeds(self) -> None:
-        get = fake_get({"https://api.adsb.lol": b"<html>503</html>", "https://nasstatus": b"{}"})
-        feeds = fetch_feeds(FEED_CONFIG, get, clock=lambda: NOW)
-        self.assertEqual((feeds.adsb, feeds.faa, len(feeds.errors)), (None, None, 2))

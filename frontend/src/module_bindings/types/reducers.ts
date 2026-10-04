@@ -6,13 +6,37 @@
 import { type Infer as __Infer } from "spacetimedb";
 
 // Import all reducer arg schemas
+import CloseUnfinishedCasesReducer from "../close_unfinished_cases_reducer";
+import CreateEvidenceSnapshotReducer from "../create_evidence_snapshot_reducer";
+import ExpireDeliveriesReducer from "../expire_deliveries_reducer";
 import IngestAircraftBatchReducer from "../ingest_aircraft_batch_reducer";
+import IngestFeedBatchReducer from "../ingest_feed_batch_reducer";
+import IngestFlightRecordsReducer from "../ingest_flight_records_reducer";
 import IngestWeatherRecordReducer from "../ingest_weather_record_reducer";
+import PruneLiveObservationsReducer from "../prune_live_observations_reducer";
+import RecordCandidateReceiptReducer from "../record_candidate_receipt_reducer";
+import RegisterAssessmentRequestReducer from "../register_assessment_request_reducer";
 import ReportSourceFailureReducer from "../report_source_failure_reducer";
 import SetIngestionPermissionReducer from "../set_ingestion_permission_reducer";
+import SetServicePermissionReducer from "../set_service_permission_reducer";
+import StoreProjectionReducer from "../store_projection_reducer";
+import SubmitFlowCandidateReducer from "../submit_flow_candidate_reducer";
+import SubmitWeatherAssessmentReducer from "../submit_weather_assessment_reducer";
 
+export type CloseUnfinishedCasesParams = __Infer<typeof CloseUnfinishedCasesReducer>;
+export type CreateEvidenceSnapshotParams = __Infer<typeof CreateEvidenceSnapshotReducer>;
+export type ExpireDeliveriesParams = __Infer<typeof ExpireDeliveriesReducer>;
 export type IngestAircraftBatchParams = __Infer<typeof IngestAircraftBatchReducer>;
+export type IngestFeedBatchParams = __Infer<typeof IngestFeedBatchReducer>;
+export type IngestFlightRecordsParams = __Infer<typeof IngestFlightRecordsReducer>;
 export type IngestWeatherRecordParams = __Infer<typeof IngestWeatherRecordReducer>;
+export type PruneLiveObservationsParams = __Infer<typeof PruneLiveObservationsReducer>;
+export type RecordCandidateReceiptParams = __Infer<typeof RecordCandidateReceiptReducer>;
+export type RegisterAssessmentRequestParams = __Infer<typeof RegisterAssessmentRequestReducer>;
 export type ReportSourceFailureParams = __Infer<typeof ReportSourceFailureReducer>;
 export type SetIngestionPermissionParams = __Infer<typeof SetIngestionPermissionReducer>;
+export type SetServicePermissionParams = __Infer<typeof SetServicePermissionReducer>;
+export type StoreProjectionParams = __Infer<typeof StoreProjectionReducer>;
+export type SubmitFlowCandidateParams = __Infer<typeof SubmitFlowCandidateReducer>;
+export type SubmitWeatherAssessmentParams = __Infer<typeof SubmitWeatherAssessmentReducer>;
 

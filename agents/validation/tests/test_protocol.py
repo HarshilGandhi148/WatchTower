@@ -8,6 +8,7 @@ from uagents_core.types import DeliveryStatus, MsgStatus
 
 from agents.validation.orchestrator import Orchestrator
 from agents.validation.protocol import ValidationGateway
+from agents.validation.storage import ValidationStorage
 from shared.contracts import AgentName
 from shared.messages import CandidateReadyMessage, CaseOpenedMessage, EnvelopeModel
 from shared.orchestration import CasePhase, ValidationVerdict
@@ -107,3 +108,39 @@ class ValidationGatewayTests(IsolatedAsyncioTestCase):
         await self.gateway.sweep(self.ctx)
         self.assertEqual(self.persist.call_args.args[0].phase, CasePhase.INSUFFICIENT_DATA)
         self.assertEqual(self.persist.call_args.args[0].reason, "timeout")
+
+    async def test_receipt_failure_leaves_notification_eligible_for_retry(self) -> None:
+        storage = MagicMock(spec=ValidationStorage)
+        storage.retrieve = AsyncMock()
+        storage.receipt = AsyncMock(side_effect=[RuntimeError("TEST database unavailable"), None])
+        self.gateway.storage = storage
+        message = self.prepare_candidate()
+        await self.gateway.handle_candidate(self.ctx, TEST_ADDRESSES[AgentName.CONGESTION], message)
+        self.validate.assert_not_awaited()
+        await self.gateway.handle_candidate(self.ctx, TEST_ADDRESSES[AgentName.CONGESTION], message)
+        self.validate.assert_awaited_once()
+        self.persist.assert_awaited_once()
+
+    async def test_failed_retrieval_never_records_receipt_or_validates(self) -> None:
+        storage = MagicMock(spec=ValidationStorage)
+        storage.retrieve = AsyncMock(side_effect=RuntimeError("TEST missing stored candidate"))
+        storage.receipt = AsyncMock()
+        self.gateway.storage = storage
+        message = self.prepare_candidate()
+        await self.gateway.handle_candidate(self.ctx, TEST_ADDRESSES[AgentName.CONGESTION], message)
+        storage.receipt.assert_not_awaited()
+        self.validate.assert_not_awaited()
+
+    async def test_startup_recovery_must_succeed_before_new_cases_are_accepted(self) -> None:
+        storage = MagicMock(spec=ValidationStorage)
+        storage.restart = AsyncMock(side_effect=[RuntimeError("TEST unavailable"), None])
+        storage.check_open = AsyncMock()
+        storage.register = AsyncMock()
+        gateway = ValidationGateway(
+            self.coordinator, self.validate, self.persist, storage, recover_on_start=True
+        )
+        await gateway.handle_open(self.ctx, TEST_ADDRESSES[AgentName.WEATHER], self.message)
+        self.ctx.send.assert_not_awaited()
+        await gateway.handle_open(self.ctx, TEST_ADDRESSES[AgentName.WEATHER], self.message)
+        self.ctx.send.assert_awaited_once()
+        self.assertEqual(storage.restart.await_count, 2)

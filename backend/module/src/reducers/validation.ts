@@ -89,7 +89,7 @@ export function envelope(
   if (
     value.schema_version !== 1 ||
     value.data_mode !== 'live' ||
-    !['awc', 'adsb_lol'].includes(text(value.provider))
+    !['awc', 'adsb_lol', 'faa'].includes(text(value.provider))
   )
     throw new Error('Unsupported source/schema/mode');
   text(value.source_ref, 2048);
