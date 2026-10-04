@@ -17,6 +17,10 @@ Covered:
 - test_wording.py and test_service.py: validated-values-only wording, verdict
   mapping, prompt-injected source text, duplicate suppression and supersession.
 
+- test_loader.py, test_ledger.py, test_chat.py and test_agent.py: stored records to
+  packet, ledger versions and FACTS, the chat's FACTS-only prompt, fallback and cap,
+  and factory wiring with a gateway round trip on an in-memory TEST store.
+
 The cross-owner flow with the real congestion service is in
 tests/integration/test_congestion_validation.py. Backend controller
 authorization/race tests belong in backend/module/tests/ and tests/decisions/.

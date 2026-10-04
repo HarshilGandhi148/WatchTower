@@ -56,6 +56,12 @@ class ValidationStorage:
 
     async def projection(self, projection_id: str) -> ProjectionComparison:
         """Recompute stored model inputs before any domain validation can use a result."""
+        return (await self.projection_record(projection_id))[3]
+
+    async def projection_record(
+        self, projection_id: str
+    ) -> tuple[FlowSnapshot, ProjectionAssumptions, ResponseParameters, ProjectionComparison]:
+        """Stored inputs and their verified recomputation; a differing result is rejected."""
         v = await self.adapter.load_projection(projection_id)
         i, a = v["input"], v["assumptions"]
         flow = FlowSnapshot(
@@ -78,7 +84,8 @@ class ValidationStorage:
             ResponseBounds(**a["bounds"]),
             a["model_version"],
         )
-        result = compare(flow, assumptions, ResponseParameters(**v["response"]))
+        response = ResponseParameters(**v["response"])
+        result = compare(flow, assumptions, response)
         if json.loads(storage_json(result)) != v["result"]:
             raise SpacetimeError("projection differs from deterministic computation")
-        return result
+        return flow, assumptions, response, result

@@ -63,31 +63,39 @@ transport failure and validator failure close to internal insufficient-data stat
 
 ## Wiring when the agent implementations exist
 
-Construct the three agent factories with separate local secrets. Implement these
-two async callbacks before invoking the coordinated builder:
+The validation factory (`agents/validation/agent.py`) registers orchestration itself.
+It provides the `validate` callback (stored packet → `validate_packet`), the `persist`
+callback (in-process advisory ledger) and `ValidationStorage`. Put it in the plain
+Bureau:
 
 ```python
-from runtime.bureau import build_coordinated_bureau
+import os
+
+from agents.congestion.agent import AgentConfig as CongestionConfig
+from agents.congestion.agent import build_agent as build_congestion
+from agents.validation.agent import AgentConfig as ValidationConfig
+from agents.validation.agent import build_agent as build_validation
+from runtime.bureau import build_bureau
 from shared.contracts import AgentName
 
-# weather, congestion, validation are prepared uAgents from their owned factories.
-# validate_candidate loads stored evidence and returns a ValidationVerdict.
-# persist_outcome is idempotent and writes through authorized backend reducers.
-bureau = build_coordinated_bureau(
+bureau = build_bureau(
     {
-        AgentName.WEATHER: weather,
-        AgentName.CONGESTION: congestion,
-        AgentName.VALIDATION: validation,
-    },
-    validate=validate_candidate,
-    persist=persist_outcome,
+        AgentName.WEATHER: weather,  # the weather owner's factory (pending)
+        AgentName.CONGESTION: build_congestion(CongestionConfig.from_env(os.environ)),
+        AgentName.VALIDATION: build_validation(ValidationConfig.from_env(os.environ)),
+    }
 )
 bureau.run()
 ```
 
-This is integration guidance, not a runnable live command: specialist factories,
-weather/traffic analyses, domain validation and database reducers are still
-pending. No default callback claims that evidence passed.
+Do not also call `build_coordinated_bureau` for this validator, because that would
+register orchestration twice. `build_coordinated_bureau` remains for callers that
+supply their own `validate`/`persist` callbacks.
+
+This is integration guidance, not a runnable live command until the weather factory
+exists. The database has no advisory table yet, so published advisories stay in the
+validator process: they are logged and served by its ASI:One chat. No default callback
+claims that evidence passed.
 
 On a case trigger, a specialist sends CaseOpenedMessage to validation. Congestion
 handles AssessmentRequestMessage, obtains the weather finding, stores its combined

@@ -115,14 +115,19 @@ class ValidationPacket:
     weather: WeatherFinding | None
     projection: ProjectionPacket | None
     now_utc: datetime
+    # The stored snapshot's server cutoff, when loaded from storage; it can trail the
+    # opening's window start slightly.
+    snapshot_cutoff_utc: datetime | None = None
 
     def __post_init__(self) -> None:
         _require_utc(self.now_utc, "now_utc")
+        if self.snapshot_cutoff_utc is not None:
+            _require_utc(self.snapshot_cutoff_utc, "snapshot_cutoff_utc")
 
     @property
     def snapshot_at_utc(self) -> datetime:
-        """The case snapshot cutoff: when the opening specialist fixed its evidence."""
-        return self.opening.created_at_utc
+        """Evidence cutoff: the stored snapshot's, else when the opening fixed its evidence."""
+        return self.snapshot_cutoff_utc or self.opening.created_at_utc
 
 
 DEMO_OWNER_ROLES: Mapping[AdvisoryType, str] = MappingProxyType(

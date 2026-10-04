@@ -230,7 +230,10 @@ def check_window(packet: ValidationPacket, config: ValidationConfig) -> tuple[Fi
     if candidate is None:
         return ()
     findings: list[Finding] = []
-    if abs(candidate.window_start_utc - packet.snapshot_at_utc) > config.window_start_tolerance:
+    if (
+        abs(candidate.window_start_utc - packet.opening.created_at_utc)
+        > config.window_start_tolerance
+    ):
         findings.append(
             _finding(
                 "window_not_from_snapshot",

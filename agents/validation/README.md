@@ -34,16 +34,42 @@ Limitations are published, with quality lowered to limited and the limitation
 shown. Candidate free text (assumptions, missing inputs) is carried only as
 displayed data; it never changes the action, parameters, wording or verdict.
 
+## Agent (agent.py)
+
+`build_agent(AgentConfig.from_env(os.environ))` prepares the validator for
+`runtime.bureau.build_bureau`. It registers, on the one validation identity:
+
+- **Coordination:** the partner-built gateway (`protocol.py`, `storage.py`) with
+  receipts and restart recovery. `validate` loads the stored packet (`loader.py`: the
+  candidate, the snapshot's copied evidence, the weather finding and the recomputed
+  projection), then runs `validate_packet`. `persist` records the outcome in
+  `ledger.py`.
+- **Advisory chat:** a read-only ASI:One chat (`chat.py`, following
+  `demo/asi1_status`). Answers come from a code-built FACTS JSON of validated
+  advisories and recent internal results. The model only phrases them. With no key, on
+  any error, or above 20 calls/minute, it replies with a deterministic summary. Chat
+  cannot open cases or change anything.
+
+| Variable | Required | Purpose |
+| --- | --- | --- |
+| `VALIDATION_AGENT_SEED` | yes | This agent's identity; private, fixed, never reused |
+| `WEATHER_AGENT_ADDRESS`, `CONGESTION_AGENT_ADDRESS` | yes | The only senders coordination accepts |
+| `SPACETIMEDB_HTTP_URL`, `SPACETIMEDB_DATABASE`, `SPACETIMEDB_VALIDATION_TOKEN` | yes | Read stored records; record receipts (validation role) |
+| `ASI_ONE_API_KEY` | no | Model-phrased chat answers; `ASI_ONE_BASE_URL` and `ASI_ONE_MODEL` are optional |
+
+The agent uses an Agentverse mailbox so ASI:One can reach the chat. On the first run,
+open the Agent inspector link from the log, choose **Connect → Mailbox** and restart,
+as for the demo. Grant the validation database role as in
+docs/congestion-spacetime.md.
+
 ## Pending
 
-- agent.py factory (seed from `VALIDATION_AGENT_SEED`) and the `validate`/`persist`
-  callbacks. They load a packet from storage, call `validate_packet` and write the
-  advisory idempotently through backend reducers.
-- Stores and SpacetimeDB tables for candidates, projection inputs, evidence
-  snapshots and advisories. Congestion currently keeps candidates in memory, uses
-  placeholder evidence IDs and does not store its projection inputs.
-- `WeatherAssessment` contract. `WeatherFinding` is a provisional reference.
-- Optional LLM paraphrase via shared/llm.py with template fallback.
+- **Advisory storage:** the database has no advisory table or publish reducer, so
+  published advisories live in this process's ledger and log, and are lost on restart.
+  The database owner needs to add `publish_validated_advisory` and an `advisories` table
+  before the dashboard can show them.
+- **Weather:** a full live case needs the weather agent, which is still pending, and a
+  `WeatherAssessment` contract. `packet.WeatherFinding` is a provisional reference.
 
 The agent never approves. Server reducers enforce controller assignment,
 version/expiry, material changes and idempotent atomic decisions.
