@@ -1,9 +1,14 @@
 # Runtime composition
 
-bureau.py will assemble exactly three distinct uAgent identities. No fourth
-agent. scheduler.py and data/ingestion.py are ordinary infrastructure.
+bureau.py implements build_bureau() and build_coordinated_bureau() for exactly
+three distinct uAgent identities. The coordinated builder attaches workflow
+routing to validation through required validation and persistence callbacks.
 
-Integration owner pins and smoke-tests uAgents/Python compatibility, fills
-seeds/allowlisted addresses, and wires the shared adapter. No runtime exists yet.
-Poll once per provider interval, prevent overlapping case/version assessments,
-bound specialist exchanges and shut down cleanly. Fixtures never enter this layer.
+See docs/orchestration.md for the handoff and limits. Specialist factories,
+provider polling, real domain validation and database callbacks remain pending.
+scheduler.py and data/ingestion.py are infrastructure, never extra agents.
+
+Install the hashed runtime requirements and development tools from README.md.
+Fill separate seeds when implementing the factories. The Bureau helper itself
+does not create identities, load fixtures, register a fourth agent or start a server
+until the caller explicitly runs it. It accepts prepared agents with their handlers.
