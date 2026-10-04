@@ -11,6 +11,7 @@ const api = vi.hoisted(() => ({
     remove: ReturnType<typeof vi.fn>;
     jumpTo: ReturnType<typeof vi.fn>;
     fitBounds: ReturnType<typeof vi.fn>;
+    setPaintProperty: ReturnType<typeof vi.fn>;
     sources: Record<
       string,
       { data: unknown; setData: ReturnType<typeof vi.fn> }
@@ -43,6 +44,7 @@ vi.mock('maplibre-gl', () => {
     });
     jumpTo = vi.fn();
     fitBounds = vi.fn();
+    setPaintProperty = vi.fn();
     sources: Record<
       string,
       { data: unknown; setData: ReturnType<typeof vi.fn> }
@@ -141,7 +143,10 @@ afterEach(() => {
   api.resizeCallback = undefined;
 });
 function create(
-  events = { ready: vi.fn(), unavailable: vi.fn() },
+  events: Parameters<typeof createTrafficMap>[1] = {
+    ready: vi.fn(),
+    unavailable: vi.fn(),
+  },
   attributionHost?: HTMLElement,
 ) {
   vi.stubGlobal(
@@ -208,6 +213,95 @@ describe('aircraft map rendering boundary', () => {
     expect(
       api.maps[0].sources['scenario-paths'].setData.mock.lastCall?.[0].features,
     ).toEqual([]);
+    controller.destroy();
+  });
+  it('keeps fixed path geometry cached during playback and clears it when mode changes', () => {
+    const controller = create();
+    api.maps[0].callbacks.load();
+    const projection = scenarioData().projections[0];
+    const update = {
+      projection,
+      expectedSnapshotId: projection.snapshotId,
+      minute: 0,
+      mode: 'TEST' as const,
+    };
+    const source = api.maps[0].sources['scenario-paths'];
+    controller.updateProjection(update);
+    expect(source.setData).toHaveBeenCalledOnce();
+    for (const minute of [0.1, 0.2, 0.3])
+      controller.updateProjection({ ...update, minute });
+    expect(source.setData).toHaveBeenCalledOnce();
+    controller.updateProjection({ ...update, mode: 'LIVE' });
+    expect(source.setData).toHaveBeenCalledTimes(2);
+    expect(source.setData.mock.lastCall?.[0].features).toEqual([]);
+    controller.updateProjection({
+      ...update,
+      mode: 'LIVE',
+      projection: {
+        ...projection,
+        aircraftPaths: { ...projection.aircraftPaths!, basis: 'modeled' },
+      },
+    });
+    expect(source.setData).toHaveBeenCalledTimes(3);
+    expect(source.setData.mock.lastCall?.[0].features).toHaveLength(6);
+    controller.destroy();
+  });
+  it('switches projected branches and highlights selected routes without changing the camera or observations', () => {
+    const selectProjected = vi.fn();
+    const controller = create({
+      ready: vi.fn(),
+      unavailable: vi.fn(),
+      selectProjected,
+    });
+    api.maps[0].callbacks.load();
+    const data = scenarioData();
+    controller.updateAircraft({
+      aircraft: data.aircraft,
+      now: Date.now(),
+      disconnected: false,
+      timezone: 'America/Detroit',
+    });
+    const observed = api.markers.filter((marker) =>
+      marker.element.classList.contains('plane-marker'),
+    );
+    const before = observed.map((marker) => [...marker.position!]);
+    const update = {
+      projection: data.projections[0],
+      expectedSnapshotId: 'test-snapshot-1',
+      minute: 5,
+      mode: 'TEST' as const,
+      branch: 'proposed' as const,
+    };
+    controller.updateProjection(update);
+    const ghosts = api.markers.filter((marker) =>
+      marker.element.classList.contains('projected-plane-marker'),
+    );
+    expect(ghosts[0].position).toEqual([-83.34, 42.25]);
+    controller.updateProjection({
+      ...update,
+      branch: 'baseline',
+      selectedAircraftId: 'test-plane-1',
+    });
+    expect(ghosts[0].position).toEqual([-83.32, 42.27]);
+    expect(ghosts[0].element).toHaveClass('selected-projection');
+    expect(ghosts[1].element).toHaveClass('dimmed-projection');
+    expect(ghosts[0].element).toHaveAttribute('aria-pressed', 'true');
+    expect(ghosts[0].element).toHaveAttribute(
+      'aria-label',
+      'DEMO101, projected aircraft in baseline scenario. Select route.',
+    );
+    ghosts[0].element.click();
+    expect(selectProjected).toHaveBeenCalledWith('test-plane-1');
+    expect(api.maps[0].fitBounds).toHaveBeenCalledOnce();
+    expect(
+      api.maps[0].sources['scenario-paths'].setData,
+    ).toHaveBeenCalledOnce();
+    expect(api.maps[0].setPaintProperty).toHaveBeenCalledWith(
+      'scenario-baseline',
+      'line-opacity',
+      ['case', ['==', ['get', 'aircraftId'], 'test-plane-1'], 0.95, 0.12],
+    );
+    expect(observed.map((marker) => marker.position)).toEqual(before);
     controller.destroy();
   });
   it('rejects mismatched snapshot paths and illustrative paths in live mode', () => {

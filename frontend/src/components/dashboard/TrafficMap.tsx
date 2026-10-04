@@ -19,6 +19,7 @@ export function TrafficMap({
   timezone,
   mode,
   mapProjection = null,
+  onSelectProjectedAircraft,
   children,
 }: {
   aircraft: readonly Aircraft[];
@@ -27,6 +28,7 @@ export function TrafficMap({
   timezone: string;
   mode: 'LIVE' | 'TEST';
   mapProjection?: MapProjection | null;
+  onSelectProjectedAircraft?: (id: string) => void;
   children?: ReactNode;
 }) {
   const container = useRef<HTMLDivElement>(null);
@@ -41,6 +43,10 @@ export function TrafficMap({
   const view = useRef<MapView>('airport');
   const radius = useRef(MAX_VIEW_RADIUS_NM);
   const latestProjection = useRef(mapProjection);
+  const selectProjected = useRef(onSelectProjectedAircraft);
+  useEffect(() => {
+    selectProjected.current = onSelectProjectedAircraft;
+  }, [onSelectProjectedAircraft]);
   const radiusId = useId();
   const [radiusNm, setRadiusNm] = useState(MAX_VIEW_RADIUS_NM);
   const [selectedView, setSelectedView] = useState<MapView>('airport');
@@ -65,6 +71,7 @@ export function TrafficMap({
         controller = createTrafficMap(
           container.current,
           {
+            selectProjected: (id) => selectProjected.current?.(id),
             ready: () => {
               if (!disposed) setStatus('ready');
             },
@@ -117,6 +124,21 @@ export function TrafficMap({
           >
             Traffic view
           </button>
+        </div>
+        <div className="map-legend" aria-label="Aircraft legend">
+          <span>
+            <svg viewBox="-15 -15 30 30" aria-hidden="true">
+              <path d="M0-12 2-3 11 3 11 5 2 2 2 8 5 10 5 12 0 10-5 12-5 10-2 8-2 2-11 5-11 3-2-3Z" />
+            </svg>
+            {mode === 'TEST' ? 'Sample' : 'Observed'}
+          </span>
+          <span className="legend-stale">
+            <svg viewBox="-15 -15 30 30" aria-hidden="true">
+              <path d="M0-12 2-3 11 3 11 5 2 2 2 8 5 10 5 12 0 10-5 12-5 10-2 8-2 2-11 5-11 3-2-3Z" />
+            </svg>
+            Stale
+          </span>
+          <span>↑ North up</span>
         </div>
         <div className="map-radius-control">
           <label htmlFor={radiusId}>View radius</label>
@@ -187,31 +209,16 @@ export function TrafficMap({
           <ul className="sr-only" aria-label="Projected aircraft">
             {supportedPaths(mapProjection).map((path) => (
               <li key={path.aircraftId}>
-                {path.label}, proposed path at +
+                {path.label}, {mapProjection.branch ?? 'proposed'} path at +
                 {mapProjection.minute.toFixed(1)} minutes from the selected
                 snapshot.
               </li>
             ))}
           </ul>
         )}
-      </div>
-      <div className="map-caption">
-        <div className="map-legend" aria-label="Aircraft legend">
-          <span>
-            <svg viewBox="-15 -15 30 30" aria-hidden="true">
-              <path d="M0-12 2-3 11 3 11 5 2 2 2 8 5 10 5 12 0 10-5 12-5 10-2 8-2 2-11 5-11 3-2-3Z" />
-            </svg>
-            {mode === 'TEST' ? 'Sample' : 'Observed'}
-          </span>
-          <span className="legend-stale">
-            <svg viewBox="-15 -15 30 30" aria-hidden="true">
-              <path d="M0-12 2-3 11 3 11 5 2 2 2 8 5 10 5 12 0 10-5 12-5 10-2 8-2 2-11 5-11 3-2-3Z" />
-            </svg>
-            Stale
-          </span>
-          <span>↑ North up</span>
+        <div className="map-caption">
+          <div ref={credits} className="map-credits" aria-label="Map credits" />
         </div>
-        <div ref={credits} className="map-credits" aria-label="Map credits" />
       </div>
     </div>
   );

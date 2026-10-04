@@ -42,7 +42,11 @@ export const PLANE_PATH =
 
 export function createTrafficMap(
   container: HTMLElement,
-  events: { ready: () => void; unavailable: () => void },
+  events: {
+    ready: () => void;
+    unavailable: () => void;
+    selectProjected?: (id: string) => void;
+  },
   attributionHost?: HTMLElement,
 ): TrafficMapController {
   setWorkerUrl(workerUrl);
@@ -69,8 +73,8 @@ export function createTrafficMap(
   );
   const attribution = new AttributionControl({ compact: false });
   const attributionAnchor = document.createElement('div');
-  // Keep source-managed credits visible immediately below the map, without an
-  // overlay obscuring airport details. MapLibre still owns updates and cleanup.
+  // Render source-managed credits in the compact map-edge strip.
+  // MapLibre still owns attribution updates and cleanup.
   map.addControl(
     attributionHost
       ? {
@@ -111,8 +115,50 @@ export function createTrafficMap(
   let fittedBounds: [[number, number], [number, number]] | null = null;
   const projectedMarkers = new globalThis.Map<
     string,
-    { marker: Marker; icon: SVGSVGElement; label: HTMLSpanElement }
+    {
+      marker: Marker;
+      button: HTMLButtonElement;
+      icon: SVGSVGElement;
+      label: HTMLSpanElement;
+    }
   >();
+  let appearanceKey = '';
+  const applyPathAppearance = (force = false) => {
+    if (!projectionSource) return;
+    const branch = projectionUpdate?.branch ?? 'proposed';
+    const selected = supportedPaths(projectionUpdate).some(
+      (path) => path.aircraftId === projectionUpdate?.selectedAircraftId,
+    )
+      ? projectionUpdate?.selectedAircraftId
+      : null;
+    const key = `${branch}/${selected ?? ''}`;
+    if (!force && key === appearanceKey) return;
+    appearanceKey = key;
+    for (const view of ['baseline', 'proposed'] as const) {
+      const opacity = view === branch ? 0.95 : 0.22;
+      map.setPaintProperty(
+        `scenario-${view}`,
+        'line-opacity',
+        selected
+          ? ['case', ['==', ['get', 'aircraftId'], selected], opacity, 0.12]
+          : opacity,
+      );
+      map.setPaintProperty(
+        `scenario-${view}`,
+        'line-width',
+        selected
+          ? [
+              'case',
+              ['==', ['get', 'aircraftId'], selected],
+              view === branch ? 3.2 : 1.5,
+              1.2,
+            ]
+          : view === branch
+            ? 2.5
+            : 1.2,
+      );
+    }
+  };
   const boundsFor = (
     coordinates: number[][],
   ): [[number, number], [number, number]] => [
@@ -130,7 +176,9 @@ export function createTrafficMap(
       container.parentElement?.querySelector<HTMLElement>('.scenario-playback');
     const bottom = playback
       ? Math.min(
-          playback.offsetHeight + 24,
+          playback.offsetHeight +
+            (Number.parseFloat(getComputedStyle(playback).bottom) || 12) +
+            12,
           Math.max(35, container.clientHeight - 70),
         )
       : 35;
@@ -186,13 +234,14 @@ export function createTrafficMap(
         source: 'scenario-paths',
         filter: ['==', ['get', 'branch'], branch],
         paint: {
-          'line-color': branch === 'proposed' ? '#c0a4ff' : '#91a6bc',
+          'line-color': branch === 'proposed' ? '#86aaf9' : '#8f99ad',
           'line-width': branch === 'proposed' ? 2.5 : 1.5,
           'line-opacity': branch === 'proposed' ? 0.95 : 0.65,
           'line-dasharray': branch === 'proposed' ? [3, 2] : [1, 3],
         },
       });
     }
+    applyPathAppearance(true);
     if (!failed) events.ready();
   });
   map.on('error', () => {
@@ -212,27 +261,38 @@ export function createTrafficMap(
   return {
     updateProjection(update) {
       if (destroyed) return;
+      // Playback moves markers each frame; fixed route geometry needs updating
+      // only when its snapshot or supplied projection changes.
+      const pathsChanged =
+        projectionUpdate?.projection !== update?.projection ||
+        projectionUpdate?.expectedSnapshotId !== update?.expectedSnapshotId ||
+        projectionUpdate?.mode !== update?.mode;
       projectionUpdate = update;
       const trajectories = supportedPaths(update);
-      projectionSource?.setData(pathFeatures(update));
+      if (pathsChanged) projectionSource?.setData(pathFeatures(update));
+      applyPathAppearance(pathsChanged);
       const active = new Set<string>();
       for (const trajectory of trajectories) {
         const position = projectedPosition(
-          trajectory.proposed,
+          trajectory[update?.branch ?? 'proposed'],
           update?.minute ?? 0,
         );
         if (!position) continue;
         active.add(trajectory.aircraftId);
         let entry = projectedMarkers.get(trajectory.aircraftId);
         if (!entry) {
-          const element = document.createElement('span');
+          const element = document.createElement('button');
+          element.type = 'button';
           element.className = 'projected-plane-marker';
-          element.setAttribute('aria-hidden', 'true');
+          element.addEventListener('click', () =>
+            events.selectProjected?.(trajectory.aircraftId),
+          );
           const icon = document.createElementNS(
             'http://www.w3.org/2000/svg',
             'svg',
           );
           icon.setAttribute('viewBox', '-15 -15 30 30');
+          icon.setAttribute('aria-hidden', 'true');
           const path = document.createElementNS(
             'http://www.w3.org/2000/svg',
             'path',
@@ -244,10 +304,33 @@ export function createTrafficMap(
           const marker = new Marker({ element })
             .setLngLat([position.longitudeDeg, position.latitudeDeg])
             .addTo(map);
-          entry = { marker, icon, label };
+          entry = { marker, button: element, icon, label };
           projectedMarkers.set(trajectory.aircraftId, entry);
         }
-        entry.label.textContent = `${trajectory.label} · projected`;
+        const selected = update?.selectedAircraftId;
+        const branch = update?.branch ?? 'proposed';
+        entry.label.textContent = trajectory.label;
+        entry.button.dataset.branch = branch;
+        entry.button.classList.toggle(
+          'selected-projection',
+          selected === trajectory.aircraftId,
+        );
+        entry.button.classList.toggle(
+          'dimmed-projection',
+          Boolean(
+            selected &&
+            trajectories.some((path) => path.aircraftId === selected) &&
+            selected !== trajectory.aircraftId,
+          ),
+        );
+        entry.button.setAttribute(
+          'aria-pressed',
+          String(selected === trajectory.aircraftId),
+        );
+        entry.button.setAttribute(
+          'aria-label',
+          `${trajectory.label}, projected aircraft in ${branch} scenario. Select route.`,
+        );
         entry.icon.style.transform = `rotate(${position.headingDeg}deg)`;
         entry.marker.setLngLat([position.longitudeDeg, position.latitudeDeg]);
       }

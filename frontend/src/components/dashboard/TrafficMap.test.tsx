@@ -66,6 +66,24 @@ describe('geographic map lifecycle', () => {
       expect.objectContaining({ aircraft: initial.aircraft }),
     );
   });
+  it('forwards aircraft selection to the current callback without recreating the map', async () => {
+    const first = vi.fn();
+    const second = vi.fn();
+    const initial = props();
+    const view = render(
+      <TrafficMap {...initial} onSelectProjectedAircraft={first} />,
+    );
+    await waitFor(() => expect(runtime.create).toHaveBeenCalledOnce());
+    act(() => runtime.create.mock.calls[0][1].selectProjected('test-plane-1'));
+    expect(first).toHaveBeenCalledWith('test-plane-1');
+    view.rerender(
+      <TrafficMap {...initial} onSelectProjectedAircraft={second} />,
+    );
+    act(() => runtime.create.mock.calls[0][1].selectProjected('test-plane-2'));
+    expect(second).toHaveBeenCalledWith('test-plane-2');
+    expect(first).toHaveBeenCalledOnce();
+    expect(runtime.create).toHaveBeenCalledOnce();
+  });
   it('preserves pan/zoom and the selected view while aircraft and freshness change', async () => {
     const initial = props();
     const view = render(<TrafficMap {...initial} />);

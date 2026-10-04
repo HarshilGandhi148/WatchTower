@@ -1,4 +1,4 @@
-import { useId } from 'react';
+import { useId, useMemo } from 'react';
 import type { DashboardSnapshot, Projection } from '../../features/live/types';
 import { ScenarioPlayback } from '../projections/ScenarioPlayback';
 import { ageLabel, formatTime } from '../../lib/time';
@@ -13,6 +13,9 @@ export function LiveOverview({
   timezone,
   scenario = null,
   playbackVisible = true,
+  reviewOpen = false,
+  onBranchChange,
+  onSelectAircraft,
   onMinuteChange,
   onCloseProjection,
   onScenarioDetails,
@@ -26,16 +29,25 @@ export function LiveOverview({
     snapshotId: string;
     title: string;
     acceptedBy?: string;
+    autoplay: boolean;
     minute: number;
+    branch: 'baseline' | 'proposed';
+    selectedAircraftId: string | null;
   } | null;
   playbackVisible?: boolean;
+  reviewOpen?: boolean;
+  onBranchChange: (branch: 'baseline' | 'proposed') => void;
+  onSelectAircraft: (id: string) => void;
   onMinuteChange: (minute: number) => void;
   onCloseProjection: () => void;
   onScenarioDetails: () => void;
 }) {
   const titleId = useId();
   const popoverGroup = useId();
-  const positions = currentAircraft(state.aircraft, now);
+  const positions = useMemo(
+    () => currentAircraft(state.aircraft, now),
+    [state.aircraft, now],
+  );
   return (
     <section className="panel live-panel" aria-labelledby={id ?? titleId}>
       <div className="live-topbar">
@@ -77,39 +89,6 @@ export function LiveOverview({
           )}
         </div>
       </div>
-      <TrafficMap
-        aircraft={positions}
-        now={now}
-        disconnected={state.connection !== 'ready'}
-        timezone={timezone}
-        mode={state.mode}
-        mapProjection={
-          scenario
-            ? {
-                projection: scenario.projection,
-                expectedSnapshotId: scenario.snapshotId,
-                minute: scenario.minute,
-                mode: state.mode,
-              }
-            : null
-        }
-      >
-        {scenario && playbackVisible && (
-          <ScenarioPlayback
-            key={`${scenario.projection?.id}-${scenario.snapshotId}-${scenario.acceptedBy ?? 'preview'}`}
-            projection={scenario.projection}
-            expectedSnapshotId={scenario.snapshotId}
-            title={scenario.title}
-            acceptedBy={scenario.acceptedBy}
-            minute={scenario.minute}
-            mode={state.mode}
-            timezone={timezone}
-            onMinuteChange={onMinuteChange}
-            onClose={onCloseProjection}
-            onDetails={onScenarioDetails}
-          />
-        )}
-      </TrafficMap>
       <div className="overview-tools">
         <Popover
           className="overview-popover"
@@ -236,23 +215,48 @@ export function LiveOverview({
           )}
         </Popover>
       </div>
-      <div className="agent-pipeline" aria-label="Agent workflow">
-        {['Weather', 'Congestion', 'Validation'].map((agent, index) => {
-          const finding = state.findings.find(
-            (f) => f.agent.toLowerCase() === agent.toLowerCase(),
-          );
-          return (
-            <article key={agent}>
-              <span className="agent-step">0{index + 1}</span>
-              <div>
-                <h3>{agent}</h3>
-                <p>{finding?.summary ?? 'Awaiting assessment'}</p>
-                {finding && <small>{ageLabel(finding.atUtc, now)}</small>}
-              </div>
-            </article>
-          );
-        })}
-      </div>
+      <TrafficMap
+        aircraft={positions}
+        now={now}
+        disconnected={state.connection !== 'ready'}
+        timezone={timezone}
+        mode={state.mode}
+        onSelectProjectedAircraft={onSelectAircraft}
+        mapProjection={
+          scenario
+            ? {
+                projection: scenario.projection,
+                expectedSnapshotId: scenario.snapshotId,
+                minute: scenario.minute,
+                branch: scenario.branch,
+                selectedAircraftId: scenario.selectedAircraftId,
+                mode: state.mode,
+              }
+            : null
+        }
+      >
+        {scenario && playbackVisible && (
+          <ScenarioPlayback
+            key={`${scenario.projection?.id}-${scenario.snapshotId}-${scenario.autoplay ? scenario.acceptedBy : 'preview'}`}
+            projection={scenario.projection}
+            expectedSnapshotId={scenario.snapshotId}
+            title={scenario.title}
+            acceptedBy={scenario.acceptedBy}
+            minute={scenario.minute}
+            branch={scenario.branch}
+            onBranchChange={onBranchChange}
+            now={now}
+            autoplay={scenario.autoplay}
+            focusOnOpen={!reviewOpen}
+            reviewOpen={reviewOpen}
+            mode={state.mode}
+            timezone={timezone}
+            onMinuteChange={onMinuteChange}
+            onClose={onCloseProjection}
+            onDetails={onScenarioDetails}
+          />
+        )}
+      </TrafficMap>
     </section>
   );
 }

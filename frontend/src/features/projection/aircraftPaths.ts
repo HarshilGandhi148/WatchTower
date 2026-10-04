@@ -9,6 +9,8 @@ export interface MapProjection {
   expectedSnapshotId: string;
   minute: number;
   mode: 'LIVE' | 'TEST';
+  branch?: 'baseline' | 'proposed';
+  selectedAircraftId?: string | null;
 }
 function validSeries(points: readonly AircraftPathPoint[]) {
   return (

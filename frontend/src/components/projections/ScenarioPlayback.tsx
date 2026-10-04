@@ -1,7 +1,7 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState, type CSSProperties } from 'react';
 import type { Projection } from '../../features/live/types';
 import { supportedPaths } from '../../features/projection/aircraftPaths';
-import { formatTime } from '../../lib/time';
+import { ageLabel, formatTime } from '../../lib/time';
 
 export function ScenarioPlayback({
   projection,
@@ -9,6 +9,12 @@ export function ScenarioPlayback({
   title,
   acceptedBy,
   minute,
+  branch = 'proposed',
+  onBranchChange,
+  now,
+  autoplay = Boolean(acceptedBy),
+  focusOnOpen = true,
+  reviewOpen = false,
   mode,
   timezone,
   onMinuteChange,
@@ -20,6 +26,12 @@ export function ScenarioPlayback({
   title: string;
   acceptedBy?: string;
   minute: number;
+  branch?: 'baseline' | 'proposed';
+  onBranchChange?: (branch: 'baseline' | 'proposed') => void;
+  now: number;
+  autoplay?: boolean;
+  focusOnOpen?: boolean;
+  reviewOpen?: boolean;
   mode: 'LIVE' | 'TEST';
   timezone: string;
   onMinuteChange: (minute: number) => void;
@@ -32,7 +44,7 @@ export function ScenarioPlayback({
   const paths = supportedPaths(update);
   const [playback, setPlayback] = useState<{ at: number; from: number } | null>(
     () =>
-      acceptedBy &&
+      autoplay &&
       paths.length &&
       minute < 15 &&
       !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
@@ -40,23 +52,50 @@ export function ScenarioPlayback({
         : null,
   );
   useEffect(() => {
-    close.current?.focus();
+    if (focusOnOpen) close.current?.focus();
+  }, [focusOnOpen]);
+  const playing = Boolean(playback && paths.length);
+  useEffect(() => {
+    const preference = window.matchMedia?.('(prefers-reduced-motion: reduce)');
+    const stopOnReducedMotion = (event: MediaQueryListEvent) => {
+      if (event.matches) setPlayback(null);
+    };
+    preference?.addEventListener?.('change', stopOnReducedMotion);
+    return () =>
+      preference?.removeEventListener?.('change', stopOnReducedMotion);
   }, []);
   useEffect(() => {
-    if (!playback) return;
-    const timer = window.setInterval(() => {
+    if (!playback || !paths.length) return;
+    let frame: number;
+    let lastFrame = -1;
+    const advance = (at: number) => {
       const next = Math.min(
         15,
         playback.from + (Date.now() - playback.at) / 1600,
       );
-      onMinuteChange(next);
+      // Follow browser frames, capped at 30 updates per second. The timeline
+      // uses elapsed time, so a background tab cannot extend the scenario.
+      const frameNumber = Math.floor(at / (1000 / 30));
+      if (frameNumber !== lastFrame || next >= 15) {
+        lastFrame = frameNumber;
+        onMinuteChange(next);
+      }
       if (next >= 15) setPlayback(null);
-    }, 100);
-    return () => window.clearInterval(timer);
-  }, [playback, onMinuteChange]);
+      else frame = window.requestAnimationFrame(advance);
+    };
+    frame = window.requestAnimationFrame(advance);
+    return () => window.cancelAnimationFrame(frame);
+  }, [playback, paths.length, onMinuteChange]);
   return (
     <section
       className="scenario-playback"
+      data-playing={playing}
+      data-accepted={Boolean(acceptedBy)}
+      style={
+        {
+          '--scenario-progress': Math.min(1, Math.max(0, minute / 15)),
+        } as CSSProperties
+      }
       aria-label="Map projection"
       onKeyDown={(event) => {
         if (event.key === 'Escape' && !event.defaultPrevented) {
@@ -66,38 +105,56 @@ export function ScenarioPlayback({
         }
       }}
     >
-      <div className="scenario-heading">
-        <div>
-          <span className="eyebrow">
-            {acceptedBy ? 'Accepted scenario' : 'Scenario preview'}
-          </span>
-          <strong>{title}</strong>
+      <div className="scenario-toolbar-meta">
+        <div
+          className="scenario-branch-controls"
+          role="group"
+          aria-label="Displayed scenario"
+        >
+          {(['baseline', 'proposed'] as const).map((view) => (
+            <button
+              key={view}
+              aria-pressed={branch === view}
+              onClick={() => onBranchChange?.(view)}
+            >
+              {view === 'baseline' ? 'Baseline' : 'Proposed'}
+            </button>
+          ))}
         </div>
-        <button ref={close} onClick={onClose} aria-label="Close projection">
-          ×
-        </button>
-      </div>
-      {acceptedBy && (
-        <p className="scenario-decision" role="status">
-          Accepted scenario · decision recorded by {acceptedBy}
-        </p>
-      )}
-      <div className="scenario-provenance">
-        <span>
+        <span className="scenario-basis" title={title}>
           {paths.length
             ? `${projection?.aircraftPaths?.basis === 'illustrative' ? 'Illustrative' : 'Modeled'} paths · ${paths.length} aircraft`
             : 'Aircraft paths unavailable for this snapshot'}
         </span>
-        <span>
-          Snapshot {formatTime(projection?.snapshotAtUtc ?? null, timezone)}
+        <span
+          className="scenario-snapshot"
+          title={`Snapshot ${formatTime(projection?.snapshotAtUtc ?? null, timezone)}`}
+        >
+          Snapshot {ageLabel(projection?.snapshotAtUtc ?? null, now)}
         </span>
+        <button
+          className="button-quiet"
+          aria-expanded={reviewOpen}
+          aria-label="Open scenario review"
+          onClick={onDetails}
+        >
+          Review
+        </button>
+        <button
+          className="button-quiet"
+          ref={close}
+          onClick={onClose}
+          aria-label="Close projection"
+        >
+          ×
+        </button>
       </div>
       <div className="scenario-timeline">
         <button
           disabled={!paths.length}
-          aria-label={playback ? 'Pause projection' : 'Play projection'}
+          aria-label={playing ? 'Pause projection' : 'Play projection'}
           onClick={() => {
-            if (playback) setPlayback(null);
+            if (playing) setPlayback(null);
             else {
               const from = minute >= 15 ? 0 : minute;
               onMinuteChange(from);
@@ -105,7 +162,7 @@ export function ScenarioPlayback({
             }
           }}
         >
-          {playback ? 'Ⅱ' : '▶'}
+          {playing ? 'Ⅱ' : '▶'}
         </button>
         <label className="sr-only" htmlFor={sliderId}>
           Projected time
@@ -124,13 +181,33 @@ export function ScenarioPlayback({
           }}
         />
         <output htmlFor={sliderId}>+{minute.toFixed(1)} min</output>
-        <button onClick={onDetails}>Scenario details</button>
+        <div
+          className="scenario-jumps"
+          role="group"
+          aria-label="Projection time"
+        >
+          {[0, 5, 10, 15].map((time) => (
+            <button
+              key={time}
+              aria-pressed={Math.abs(minute - time) < 0.05}
+              onClick={() => {
+                setPlayback(null);
+                onMinuteChange(time);
+              }}
+            >
+              {time === 0 ? 'Now' : `+${time} min`}
+            </button>
+          ))}
+        </div>
       </div>
       <div className="scenario-legend">
         <span className="observed-key">● Observed</span>
         <span className="baseline-key">┄ Baseline</span>
-        <span className="proposed-key">┄ Proposed paths</span>
-        <span>Live observations continue updating</span>
+        <span className="proposed-key">┄ Proposed</span>
+        <span>
+          {acceptedBy ? `Accepted by ${acceptedBy}` : 'Preview only'} · Live
+          observations continue updating
+        </span>
       </div>
     </section>
   );
