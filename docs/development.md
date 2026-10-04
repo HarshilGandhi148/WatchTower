@@ -10,10 +10,17 @@ Python 3.13 and Node 24 are the team defaults. requirements-dev.txt pins the
 Python quality tools. JavaScript dependencies are locked per workspace and
 installed with npm ci. Do not share .venv or node_modules between teammates.
 
-Before implementing the runtime, the integration owner must test and pin uAgents,
-the HTTP client, secure XML parser, and environment loader in pyproject.toml,
-and commit a reproducible runtime lockfile. The scaffold has no runtime third-party
-dependencies and does not pretend to run three agents yet.
+uAgents 0.26.0 is pinned in pyproject.toml, with a universal hashed dependency lock
+in requirements-runtime.txt. Install it with
+`python -m pip install --require-hashes -r requirements-runtime.txt`.
+SDK construction, signed protocol registration and serialization are tested on
+Python 3.13; these tests do not connect a live agent system.
+
+The validation-owned orchestrator and Bureau builder are implemented; see
+docs/orchestration.md. Agent factories and live/domain/database callbacks remain
+pending. Add direct HTTP/XML/environment dependencies as their adapters are
+implemented, then regenerate the runtime lock with the command in its header.
+Do not hand-edit generated dependency hashes.
 
 The backend workspace reserves a TypeScript module using spacetimedb/server;
 the frontend SDK must match the tested database release before bindings are

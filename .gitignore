@@ -6,6 +6,9 @@
 *.key
 secrets/
 spacetime.local.json
+private_keys.json
+# uAgents local identity-keyed state, not provider fixtures.
+agent*_data.json
 
 # Python
 .venv/

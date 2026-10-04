@@ -5,8 +5,10 @@ stable boundaries so the four workstreams can proceed independently.
 
 ## Agent messages
 
-shared/contracts.py defines the initial envelope and bounded enum catalog only;
-payload DTOs and uAgents Model serialization are still pending implementation.
+shared/contracts.py defines the domain envelope and bounded enum catalog.
+shared/messages.py implements SDK wire serialization and shared/orchestration.py
+defines coordination references. WeatherAssessment, FlowCandidate and
+ValidatedAdvisory payload DTOs remain pending implementation.
 Messages carry schema_version, message_id, case_id, sender_agent, created_at_utc,
 snapshot_id, evidence_ids, airport_icao, valid_until_utc, and optional correlation_id
 and reply_to. UTC-aware timestamps and KDTW are checked by the initial envelope.
@@ -20,6 +22,11 @@ The cycle is weather ↔ congestion → validation. Cases use fixed evidence;
 there is at most one correction and two specialist exchanges. Request retries
 are idempotent. Agents communicate through messages and shared records, never
 by importing each other's implementation.
+
+Validation owns case orchestration through signed CaseOpenedMessage and
+CandidateReadyMessage handlers, routing AssessmentRequestMessage to congestion.
+Congestion still obtains the weather assessment before submitting its combined
+candidate. See docs/orchestration.md for correlation, rounds, callbacks and limits.
 
 ## Data and projections
 

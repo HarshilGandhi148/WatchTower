@@ -7,7 +7,8 @@
 | Validation + shared backend/integration | TODO_VALIDATION_OWNER | agents/validation/, backend/, runtime/, shared/spacetimedb_adapter.py, shared/settings.py, shared/llm.py, data/ingestion.py, data/normalization.py, data/health.py, scripts/ | 6.4–6.5, 7, 9–10 |
 | Frontend | TODO_FRONTEND_OWNER | frontend/ | 12–13 |
 
-shared/contracts.py, tests/contracts/, docs/interfaces.md, and release policies
+shared/contracts.py, shared/messages.py, shared/orchestration.py, tests/contracts/,
+docs/interfaces.md, and release policies
 are shared review surfaces. The integration owner coordinates; affected owners
 review. Each agent owns its colocated unit tests. Shared integration, decision,
 and end-to-end tests are maintained by the owners of the affected behavior.
@@ -23,6 +24,8 @@ in this table and CODEOWNERS when introduced. Do not add extra agents.
   and the validation owner consumes its public deterministic interface.
 - runtime/bureau.py is the composition point; specialists do not initialize or
   reach into each other's agents.
+- agents/validation/orchestrator.py and protocol.py own case orchestration.
+  Keep the coordinator within validation; see docs/orchestration.md.
 - New public DTOs go in shared/contracts.py; private DTOs stay with their owner.
 - Frontend uses generated module bindings, not manually copied backend rows.
 - New fixtures live in tests/fixtures/<provider-or-case>/ with a README naming

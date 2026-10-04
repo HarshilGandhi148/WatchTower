@@ -8,6 +8,11 @@ This repository is a development scaffold. Agent logic, provider integrations,
 SpacetimeDB tables/reducers, and live subscriptions remain to be implemented.
 The frontend starts disconnected and does not present synthetic data as live.
 
+Workflow orchestration is implemented in the Validation / Coordinating Agent,
+with typed Fetch.ai messages and a three-agent Bureau builder. Specialist
+factories and live/backend callbacks still need implementation. See
+[orchestration](docs/orchestration.md).
+
 ## Four workstreams
 
 | Contributor template | Primary directory | Additional ownership |
@@ -61,6 +66,7 @@ Use Python 3.13 (3.12 also supported) and Node 24, matching the version files.
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -r requirements-dev.txt
+python -m pip install --require-hashes -r requirements-runtime.txt
 cp .env.example .env
 npm --prefix backend/module ci
 npm --prefix frontend ci
@@ -74,7 +80,7 @@ decision flow until its release gates pass. Each contributor should use a
 separate clone/worktree and their own .env.
 
 [Setup and eventual start order](docs/development.md) explains the SpacetimeDB
-placeholders, runtime dependency pinning, and binding generation.
+placeholders, locked runtime dependencies, and binding generation.
 [Ownership](docs/ownership.md), [contributing](CONTRIBUTING.md), and
 [quality control](docs/quality-control.md) explain how four people work together.
 
@@ -82,7 +88,8 @@ placeholders, runtime dependency pinning, and binding generation.
 
 - `make policy`: three-agent layout, import boundaries, fixture isolation,
   public frontend configuration.
-- `make test`: standard-library Python regression tests, including message contracts.
+- `make test`: Python regression tests, including real Fetch.ai message
+  serialization, coordinator behavior, and SDK registration with mocked services.
 - `make check-python`: policy, tests, Ruff lint/format, strict mypy.
 - `make check-js`: backend/frontend lint, format, TypeScript checks, frontend
   tests, production frontend build.

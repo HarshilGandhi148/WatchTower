@@ -13,6 +13,8 @@ acceptance checks that must be implemented as behavior arrives.
 | Public frontend config | Only the three allowlisted VITE settings; browser env access is centralized |
 | Python quality | Ruff lint/format and strict mypy |
 | Shared envelope | UTC, validity, schema, airport, ID, and role regression checks |
+| Fetch.ai wiring | Real SDK JSON round trips, signed protocol registration, exactly three Bureau members; external services mocked |
+| Orchestration | Sender allowlist, fixed snapshots, request correlation, duplicates, one correction, expiry and retryable outcome persistence |
 | Frontend/backend quality | ESLint, Prettier, TypeScript, frontend test and production build |
 | Secrets | Gitleaks history scan plus environment filenames ignored by Git |
 

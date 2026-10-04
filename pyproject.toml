@@ -7,8 +7,7 @@ name = "watchtower"
 version = "0.1.0"
 description = "DTW advisory prototype: three agents and a controller dashboard"
 requires-python = ">=3.12,<3.14"
-# Runtime dependencies are added after the uAgents/host compatibility smoke test.
-dependencies = []
+dependencies = ["uagents==0.26.0"]
 
 [tool.setuptools.packages.find]
 include = ["agents*", "data*", "projection*", "shared*", "runtime*"]
@@ -27,3 +26,8 @@ python_version = "3.12"
 strict = true
 files = ["agents", "data", "projection", "shared", "runtime", "scripts"]
 exclude = ["(^|/)tests/"]
+
+# Fetch.ai supplies annotations but no py.typed marker; inspect its source types.
+[[tool.mypy.overrides]]
+module = ["uagents", "uagents.*", "uagents_core", "uagents_core.*"]
+follow_untyped_imports = true
