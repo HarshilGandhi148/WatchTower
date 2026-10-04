@@ -1,8 +1,8 @@
 # Shared backend
 
-Owned by validation/integration. module/ reserves the TypeScript SpacetimeDB
-database module; it is independent of frontend/ and the Python agents.
+Owned by validation/integration. module/ contains the TypeScript SpacetimeDB
+observation foundation; it is independent of frontend/ and the Python agents.
 
-No host, API token or database is required for scaffold checks. Runtime access
-is configured later through root .env; the frontend gets only public connection
-values. See module/README.md and docs/interfaces.md.
+Unit checks need no host or token. The explicit integration gate creates its own
+local TEST server and identities. Application writes require a separately
+authorized ingestion identity. See module/README.md and docs/development.md.

@@ -1,9 +1,9 @@
-# Reserved generated bindings
+# Generated SpacetimeDB bindings
 
-No bindings exist until the database schema and tested release are available.
-The integration owner generates TypeScript bindings here; frontend reviews them.
+Generated from backend/module by CLI 2.10.2. The generated index.ts records
+the CLI commit and public schema. See backend/module/README.md for the exact
+command and compatibility record.
 
-Commit generated files with backend schema changes. Record the CLI version,
-schema/module version and exact generation command in backend/module/README.md.
-Do not edit generated code by hand. The frontend is disconnected until the
-official client, bindings and subscription lifecycle are implemented.
+Commit schema and generated files together; never hand-edit generated code.
+make check-spacetime compares fresh generation with these files. Only the three
+public observation tables are subscribed to; private permissions are excluded.

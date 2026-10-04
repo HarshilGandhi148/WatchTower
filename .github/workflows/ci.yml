@@ -53,6 +53,34 @@ jobs:
       - run: npm --prefix frontend ci
       - run: make check-js
 
+  spacetime:
+    name: SpacetimeDB integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - name: Install pinned SpacetimeDB tooling
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSfL https://github.com/clockworklabs/SpacetimeDB/releases/download/v2.10.2/spacetimedb-update-x86_64-unknown-linux-gnu -o "$RUNNER_TEMP/spacetime-install"
+          chmod +x "$RUNNER_TEMP/spacetime-install"
+          "$RUNNER_TEMP/spacetime-install" --yes
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Select tested version
+        run: |
+          spacetime version install 2.10.2 --yes --use
+          spacetime --version
+      - run: npm --prefix backend/module ci
+      - run: npm --prefix frontend ci
+      - run: make check-spacetime
+
   secrets:
     name: Secret scan
     runs-on: ubuntu-latest

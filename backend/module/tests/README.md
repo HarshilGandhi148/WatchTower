@@ -1,7 +1,11 @@
-# Backend acceptance tests — pending
+# Backend observation tests
 
-Add a real database/CLI test harness once the tested release is available.
-Test anonymous/wrong-role identities, immutable live evidence, expired/superseded
-versions, material changes, concurrent decisions, idempotent requests and edit
-revalidation. The empty schema cannot pass these tests. Typechecking alone is
-not authorization or integration evidence.
+validation.test.ts covers pure input, authorization-role and state transition
+rules without mocking database transaction guarantees. Run npm test.
+
+make check-spacetime exercises the actual module/server for permission grants
+and revocations, unassigned/anonymous writes, private table visibility, retries,
+transaction rollback and concurrent observation updates.
+
+Immutable evidence, expired/superseded advisory decisions, material changes,
+controller races and edit revalidation remain pending with those features.
