@@ -7,6 +7,13 @@
 **Shared backend:** SpacetimeDB  
 **Status:** Implementation plan. Provider documentation has been researched; credentials, live coverage, and end-to-end integration have not yet been tested.
 
+**Product scope clarification (October 4, 2026):** WatchTower is intended to assist
+controllers across airports. DTW is the first demo location and the implementation
+scope of this plan. The current code still fixes airport checks, storage, and map
+behavior to DTW; another airport is not yet selectable through configuration alone.
+See [repository review](docs/repository-review.md) for implementation status and
+the work needed before connecting the three agents.
+
 ## 1. Product definition and agreed requirements
 
 Build an airport-wide flow advisory dashboard for a simulated DTW tower flow-coordination user. A Weather Agent and a Flight Congestion Agent exchange findings about live conditions. A Validation / Coordinating Agent checks their evidence and creates concise advisories. Each controller receives a short list relevant to their assigned responsibility and can approve, edit, or ignore an advisory.
