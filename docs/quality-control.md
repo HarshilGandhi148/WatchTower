@@ -102,6 +102,11 @@ bounded edits, rejected requests, stable retry IDs, subscription cleanup,
 disconnect/resynchronization, fixed snapshots, unavailable metrics, stale
 positions, source-text escaping, Detroit DST, focus restoration, accepted
 projection selection and synchronization across two isolated TEST identities.
+Review coverage includes keyboard tabs, +15 outcome tradeoffs, missing horizon
+samples, branch switching, aircraft selection, version retention, read-only
+history and delayed acknowledgements. Animation checks cover frame cancellation,
+reduced-motion changes during playback, and fixed route geometry across playback
+and LIVE/TEST transitions.
 The separate browser harness is documented in tests/e2e/README.md.
 
 These checks use TEST display data and a local TEST transport. They do not prove

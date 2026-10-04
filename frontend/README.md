@@ -25,7 +25,7 @@ Open http://127.0.0.1:5174. This entrypoint lives in `tests/` and imports TEST-o
 scenarios. It cannot access aircraft/weather providers or a database. The real basemap
 loads geographic tiles from OpenFreeMap; aircraft remain synthetic TEST data.
 The compact Demo mode disclosure identifies sample data. Rehearsal controls are
-under **Demo settings** in the workspace footer. It supports switching between two independent
+under **Demo settings** in the header. It supports switching between two independent
 controller identities in the same workspace, read-only viewing, outages, reconnects,
 bounded edits, explicit TEST revalidation, approvals, dismissals and history.
 Its revalidation uses fixed synthetic series; it is not a projection calculation
@@ -37,7 +37,7 @@ or evidence of backend authorization. Reload to reset scenarios.
   timestamps, weather, published events, and specialist findings.
 - Three prioritized visible advisories with an expandable overflow queue.
 - Fixed-snapshot path playback and baseline/proposed comparison, with exact
-  0/5/10/15-minute model values in optional scenario details.
+  0/5/10/15-minute model values in the review pane.
 - Dedicated History page and visible Weather → Congestion → Validation findings.
 - Unknown values remain unavailable. Stale positions are labeled and positions
   older than 120 seconds are excluded from the current map.
@@ -56,25 +56,48 @@ separate `#/history` page with decision totals and full versioned records; brows
 Back/Forward navigation works, and accepted scenarios can be reopened on the map.
 The map remains mounted while History is shown, preserving its state and live subscription.
 
-Preview and accepted decisions select paths directly on the map. The MHacks
-preview supplies hand-authored illustrative trajectories with a 0–15 minute
-scrubber and playback. Acceptance starts playback unless reduced motion is
-requested. Projected aircraft are hollow purple symbols with dashed paths;
-observed aircraft remain separate. Scenario details is an optional wider menu
-with exact aggregate model values, provenance, assumptions and limitations.
-The three specialist assessments are visible beneath the map in taller desktop
-windows and available under Specialist findings at smaller sizes.
+Preview opens a wider right-hand review pane and slides the map left. Overview
+shows the response, ownership, version, expiry, fixed +15-minute outcomes,
+sampled comparison, and selectable projected aircraft. Evidence contains the
+source timestamps, assumptions, limitations, path basis, and model provenance.
+Queue cards contain Preview (or Review for advisories without projections);
+approve, edit, and ignore live in the review footer. Bounded edits await
+revalidation, and unsupported/mismatched projections disable approval while
+still allowing otherwise-authorized edits and dismissal.
 
-Narrow or short windows use a stacked layout with normal document scrolling.
-No observations, assignments or projection snapshots are changed by navigation,
-playback, preview, approval or menu resizing.
+A compact map toolbar supplies 0–15-minute playback, Now/+5/+10/+15 shortcuts,
+and Baseline/Proposed switching. Branch changes preserve time and camera;
+selection highlights the aircraft's route and dims other projected paths.
+Projected aircraft are hollow blue symbols; observed aircraft remain mint and
+independent. The MHacks paths are hand-authored illustrative trajectories.
+The +15 outcome summary is separate from the sampled timeline comparison, and
+unfavorable waiting changes remain explicit. Missing horizon samples are not
+filled with earlier values. Density-only results expose supported pressure and
+explain why departure metrics are unavailable.
+
+Approval starts proposed playback from minute zero only after acknowledgement,
+unless reduced motion is requested. Accepted records reopened from History are
+read-only. Weather, restrictions, aircraft timestamps, and the three specialist
+assessments are available in compact menus above the map. The desktop map
+extends to the bottom of the workspace without a separate footer. Narrow or short windows use a
+stacked layout with document scrolling; desktop review width is
+`clamp(440px, 38vw, 580px)`.
+
+Charcoal surfaces, shared color/spacing tokens, a compact source strip, and
+consistent 14px body / 12px metadata typography replace the earlier nested-card
+layout. Short menu/preview transitions and a brief acceptance glow remain;
+continuous halos and layered entrance sequences are removed. Playback uses
+browser frames at up to 30 updates per second. Reduced motion disables
+decorative motion and autoplay; enabling it during playback pauses the scenario.
+Explicit Play and the scrubber remain available. No observations, assignments,
+or projection snapshots are changed by these controls.
 
 ## Geographic map
 
 MapLibre GL JS 6.12.0 renders the OpenFreeMap dark basemap. No map account,
 API key or extra browser environment settings are required. Source-managed
-attribution remains visible directly below the map, so credits do not cover
-airport detail. Attribution updates and cleanup still use the built-in MapLibre
+attribution remains visible in a compact strip inside the bottom map edge.
+Playback and the map scale reserve space above the credits. Attribution updates and cleanup still use the built-in MapLibre
 control. Tile loading requires internet access and WebGL; failures
 show a separate map notice and Retry map button without changing observations.
 
