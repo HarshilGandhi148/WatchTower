@@ -85,18 +85,25 @@ class AgentConfig:
 
 
 def _projection_settings(env: Mapping[str, str]) -> ProjectionSettings | None:
-    """All three operator settings enable projections; none disables them."""
+    """Capacity enables projections; the backlog pair is an optional operator fallback."""
     values = {name: env.get(name, "").strip() for name in PROJECTION_SETTINGS}
-    if not any(values.values()):
+    capacity, upstream, queue = (values[name] for name in PROJECTION_SETTINGS)
+    if not capacity:
+        if upstream or queue:
+            raise ValueError("backlog settings need DEPARTURE_CAPACITY_PER_HOUR")
         return None
-    missing = [name for name, value in values.items() if not value]
-    if missing:
-        raise ValueError(f"projection settings need all of: {', '.join(missing)}")
+    if bool(upstream) != bool(queue):
+        raise ValueError(
+            "DEPARTURE_BACKLOG_UPSTREAM and DEPARTURE_BACKLOG_RUNWAY_QUEUE go together"
+        )
     try:
-        capacity, upstream, queue = (int(values[name]) for name in PROJECTION_SETTINGS)
+        return ProjectionSettings(
+            int(capacity),
+            int(upstream) if upstream else None,
+            int(queue) if queue else None,
+        )
     except ValueError as error:
-        raise ValueError("projection settings must be whole numbers") from error
-    return ProjectionSettings(capacity, upstream, queue)
+        raise ValueError(f"invalid projection settings: {error}") from error
 
 
 def _utcnow() -> datetime:

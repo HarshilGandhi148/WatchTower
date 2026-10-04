@@ -174,20 +174,19 @@ class AgentConfigTests(TestCase):
         self.assertEqual(default, AgentConfig.from_env({**ENV, **AERO_ENV}))
         self.assertIsNone(default.projection)
 
-    def test_projections_need_capacity_and_both_backlog_settings(self) -> None:
-        settings = {
-            "DEPARTURE_CAPACITY_PER_HOUR": "36",
-            "DEPARTURE_BACKLOG_UPSTREAM": "4",
-            "DEPARTURE_BACKLOG_RUNWAY_QUEUE": "2",
-        }
-        config = AgentConfig.from_env({**ENV, **settings})
-        self.assertEqual(config.projection, ProjectionSettings(36, 4, 2))
-        for partial in (
-            {"DEPARTURE_CAPACITY_PER_HOUR": "36"},
-            {**settings, "DEPARTURE_BACKLOG_UPSTREAM": " "},
-            {**settings, "DEPARTURE_BACKLOG_RUNWAY_QUEUE": "two"},
-            {**settings, "DEPARTURE_CAPACITY_PER_HOUR": "3"},
-            {**settings, "DEPARTURE_BACKLOG_UPSTREAM": "-1"},
+    def test_projection_settings(self) -> None:
+        capacity = {"DEPARTURE_CAPACITY_PER_HOUR": "36"}
+        backlog = {"DEPARTURE_BACKLOG_UPSTREAM": "4", "DEPARTURE_BACKLOG_RUNWAY_QUEUE": "2"}
+        only_capacity = AgentConfig.from_env({**ENV, **capacity})
+        self.assertEqual(only_capacity.projection, ProjectionSettings(36))
+        with_fallback = AgentConfig.from_env({**ENV, **capacity, **backlog})
+        self.assertEqual(with_fallback.projection, ProjectionSettings(36, 4, 2))
+        for invalid in (
+            backlog,
+            {**capacity, "DEPARTURE_BACKLOG_UPSTREAM": "4"},
+            {**capacity, **backlog, "DEPARTURE_BACKLOG_RUNWAY_QUEUE": "two"},
+            {**capacity, "DEPARTURE_CAPACITY_PER_HOUR": "3"},
+            {**capacity, **backlog, "DEPARTURE_BACKLOG_UPSTREAM": "-1"},
         ):
-            with self.subTest(partial=partial), self.assertRaises(ValueError):
-                AgentConfig.from_env({**ENV, **partial})
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                AgentConfig.from_env({**ENV, **invalid})

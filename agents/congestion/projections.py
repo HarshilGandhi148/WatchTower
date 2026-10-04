@@ -1,11 +1,18 @@
 """Projection prepared from one stored snapshot, in the shape the store_projection reducer accepts.
 
 Pure: the caller supplies the stored feeds and operator settings. Demand comes only from
-the snapshot's stored, fresh, confirmed departure records, bucketed exactly as the
-reducer re-derives it (no backlog exclusion, no taxi assumption). Stored flight records
-carry no gate times, so the initial backlog cannot be observed: it is an explicit
-operator setting, labelled as such, and the candidate quality is limited accordingly.
-Missing settings or demand give no projection, never zero-valued results.
+the snapshot's stored, fresh, confirmed departure records in five-minute buckets.
+
+Initial backlog, in order of preference:
+
+1. Observed from stored gate times (pushed back = runway queue; past scheduled gate-out
+   = upstream). Those flights are excluded from future demand so none is counted twice.
+2. Otherwise an explicit operator setting, labelled not observed; candidate quality is
+   limited accordingly. Demand then includes every departure, as the reducer derives it.
+
+Missing settings, backlog or demand give no projection, never zero-valued results. The
+current reducer accepts only case 2; case 1 needs the gate-time change proposed in
+docs/interfaces.md.
 """
 
 from __future__ import annotations
@@ -16,7 +23,7 @@ from typing import Any
 
 from agents.congestion.candidates import flow_snapshot_from_demand, project
 from agents.congestion.feeds import FeedSnapshot
-from agents.congestion.metrics import demand_windows
+from agents.congestion.metrics import DemandWindows, demand_windows, departure_backlog
 from projection.aggregate_flow import FlowSnapshot, ProjectionComparison, ProjectionStatus
 from projection.assumptions import (
     MAX_CAPACITY_PER_HOUR,
@@ -30,20 +37,28 @@ from projection.assumptions import (
 )
 
 BACKLOG_NOTE = "initial departure backlog is operator-configured, not observed"
+OBSERVED_BACKLOG_NOTE = "initial departure backlog from stored gate times; readiness not observed"
 
 
 @dataclass(frozen=True, slots=True)
 class ProjectionSettings:
-    """Operator configuration; none of these values is observed or inferred."""
+    """Operator configuration; none of these values is observed or inferred.
+
+    The backlog pair is a fallback for snapshots whose flight records carry no gate
+    times; leave both ``None`` to project only from an observed backlog.
+    """
 
     capacity_per_hour: int
-    backlog_upstream: int
-    backlog_runway_queue: int
+    backlog_upstream: int | None = None
+    backlog_runway_queue: int | None = None
 
     def __post_init__(self) -> None:
         require_count(self.capacity_per_hour, "capacity_per_hour")
-        require_count(self.backlog_upstream, "backlog_upstream")
-        require_count(self.backlog_runway_queue, "backlog_runway_queue")
+        if (self.backlog_upstream is None) != (self.backlog_runway_queue is None):
+            raise ValueError("backlog_upstream and backlog_runway_queue go together")
+        if self.backlog_upstream is not None:
+            require_count(self.backlog_upstream, "backlog_upstream")
+            require_count(self.backlog_runway_queue, "backlog_runway_queue")
         minimum = ResponseBounds().min_release_cap_per_hour
         if not minimum <= self.capacity_per_hour <= MAX_CAPACITY_PER_HOUR:
             raise ValueError(
@@ -59,6 +74,8 @@ class PreparedProjection:
     response: ResponseParameters
     comparison: ProjectionComparison
     evidence_id: str  # the stored departure-demand batch
+    demand: DemandWindows  # the windows the projection used, for the candidate's metrics
+    backlog_observed: bool
 
     def payload(self) -> dict[str, Any]:
         """Exactly the store_projection reducer fields; the adapter serializes dataclasses."""
@@ -95,17 +112,37 @@ def prepare_projection(
     horizon = span // timedelta(minutes=1)
     if span % timedelta(minutes=1) or horizon not in SUPPORTED_HORIZONS_MINUTES:
         return None
-    demand = demand_windows(feeds.demand_records, feeds.demand_fetched_at_utc, start, horizon)
-    if demand.windows is None:
-        return None  # missing or stale stored demand: unknown, not zero
-    snapshot = flow_snapshot_from_demand(
-        feeds.snapshot_id,
-        start,
-        demand,
-        settings.backlog_upstream,
-        settings.backlog_runway_queue,
-    )
-    snapshot = replace(snapshot, demand_basis=f"{snapshot.demand_basis}; {BACKLOG_NOTE}")
+
+    records, fetched = feeds.demand_records, feeds.demand_fetched_at_utc
+    if feeds.demand_gate_times:
+        backlog = departure_backlog(records, fetched, start)
+        if backlog.upstream_waiting is None or backlog.runway_queue is None:
+            return None
+        demand = demand_windows(
+            records, fetched, start, horizon, exclude_flight_ids=backlog.flight_ids
+        )
+        if demand.windows is None:
+            return None
+        demand = replace(demand, assumptions=demand.assumptions + backlog.assumptions)
+        upstream, queue, note = (
+            backlog.upstream_waiting,
+            backlog.runway_queue,
+            OBSERVED_BACKLOG_NOTE,
+        )
+    elif settings.backlog_upstream is not None and settings.backlog_runway_queue is not None:
+        demand = demand_windows(records, fetched, start, horizon)
+        if demand.windows is None:
+            return None  # missing or stale stored demand: unknown, not zero
+        upstream, queue, note = (
+            settings.backlog_upstream,
+            settings.backlog_runway_queue,
+            BACKLOG_NOTE,
+        )
+    else:
+        return None  # no observed backlog and no operator fallback
+
+    snapshot = flow_snapshot_from_demand(feeds.snapshot_id, start, demand, upstream, queue)
+    snapshot = replace(snapshot, demand_basis=f"{snapshot.demand_basis}; {note}")
     assumptions = ProjectionAssumptions(
         capacity=CapacityScenario(
             "operator-configured departure capacity",
@@ -125,4 +162,6 @@ def prepare_projection(
         response=response,
         comparison=comparison,
         evidence_id=feeds.demand_evidence_id,
+        demand=demand,
+        backlog_observed=feeds.demand_gate_times,
     )

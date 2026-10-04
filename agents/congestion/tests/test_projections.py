@@ -12,6 +12,7 @@ from agents.congestion.feeds import FeedSnapshot, stored_feeds
 from agents.congestion.persistence import PersistentCongestionService
 from agents.congestion.projections import (
     BACKLOG_NOTE,
+    OBSERVED_BACKLOG_NOTE,
     ProjectionSettings,
     prepare_projection,
 )
@@ -164,7 +165,7 @@ class PrepareProjectionTests(TestCase):
         self.assertEqual(prepared.snapshot.demand_per_minute, (0,) * 15)
 
     def test_settings_are_bounded_counts(self) -> None:
-        for values in ((5, 0, 0), (121, 0, 0), (30, -1, 0), (30, 0, True)):
+        for values in ((5, 0, 0), (121, 0, 0), (30, -1, 0), (30, 0, True), (30, 1, None)):
             with self.subTest(values=values), self.assertRaises(ValueError):
                 ProjectionSettings(*values)  # type: ignore[arg-type]
 
@@ -194,6 +195,64 @@ class PrepareProjectionTests(TestCase):
         self.assertEqual(storage_json(first.payload()), storage_json(second.payload()))
 
 
+def gate_records() -> list[dict[str, Any]]:
+    """Every record carries both gate keys, as the proposed reducer change would store."""
+    gates = {"gate_scheduled_utc": None, "gate_actual_utc": None}
+    return [
+        # Pushed back two minutes ago, not airborne: runway queue.
+        flight(
+            1,
+            3,
+            gate_scheduled_utc=NOW - timedelta(minutes=4),
+            gate_actual_utc=NOW - timedelta(minutes=2),
+        ),
+        # Past scheduled gate-out, not pushed back: upstream waiting.
+        flight(2, 8, gate_scheduled_utc=NOW - timedelta(minutes=5), gate_actual_utc=None),
+        # Scheduled gate-out still ahead: future demand only.
+        flight(3, 7, gate_scheduled_utc=NOW + timedelta(minutes=4), gate_actual_utc=None),
+        flight(4, 12, **gates),  # no gate times: unclassified, stays demand
+        flight(5, 1, direction="arrival", **gates),
+    ]
+
+
+class ObservedBacklogTests(TestCase):
+    def test_stored_gate_fields_are_parsed_only_when_every_record_has_them(self) -> None:
+        feeds = stored_feeds(stored_snapshot(gate_records()))
+        self.assertTrue(feeds.demand_gate_times)
+        records = {r.flight_id: r for r in feeds.demand_records or ()}
+        self.assertEqual(records["TEST-flight-1"].gate_actual_utc, NOW - timedelta(minutes=2))
+        self.assertIsNone(records["TEST-flight-2"].gate_actual_utc)
+        partial = gate_records()
+        del partial[0]["gate_actual_utc"]
+        for records_json in (partial, mixed_records(), []):
+            with self.subTest(count=len(records_json)):
+                self.assertFalse(stored_feeds(stored_snapshot(records_json)).demand_gate_times)
+
+    def test_observed_backlog_is_preferred_and_not_counted_twice(self) -> None:
+        snapshot = stored_snapshot(gate_records())
+        prepared = prepare_projection(stored_feeds(snapshot), SETTINGS)
+        assert prepared is not None
+        flow = prepared.snapshot
+        self.assertTrue(prepared.backlog_observed)
+        self.assertEqual((flow.initial_upstream_waiting, flow.initial_runway_queue), (1, 1))
+        self.assertIn(OBSERVED_BACKLOG_NOTE, flow.demand_basis)
+        self.assertEqual(sum(flow.demand_per_minute or ()), 2)  # flights 3 and 4 only
+        # Today's reducer rule counts the backlog flights as demand too; the gate-time
+        # proposal in docs/interfaces.md aligns it before such projections are stored.
+        self.assertEqual(sum(reducer_demand(snapshot, 15)), 4)
+
+    def test_capacity_alone_projects_only_from_an_observed_backlog(self) -> None:
+        capacity_only = ProjectionSettings(30)
+        self.assertIsNone(prepare_projection(stored_feeds(stored_snapshot()), capacity_only))
+        prepared = prepare_projection(stored_feeds(stored_snapshot(gate_records())), capacity_only)
+        assert prepared is not None
+        self.assertTrue(prepared.backlog_observed)
+
+    def test_stale_records_give_no_observed_backlog(self) -> None:
+        stale = stored_snapshot(gate_records(), fetched=NOW - timedelta(minutes=6))
+        self.assertIsNone(prepare_projection(stored_feeds(stale), SETTINGS))
+
+
 class ServiceProjectionTests(TestCase):
     def candidate(self, service: CongestionService):  # type: ignore[no-untyped-def]
         opening = service.start_cycle(stored_feeds(stored_snapshot()), NOW)
@@ -221,6 +280,26 @@ class ServiceProjectionTests(TestCase):
         self.assertEqual(len(projected), 3)
         self.assertIs(candidate.quality, EvidenceQuality.LIMITED)
         self.assertIn(BACKLOG_NOTE, candidate.assumptions)
+
+    def test_observed_backlog_does_not_limit_quality_or_double_count_demand(self) -> None:
+        service = CongestionService(projection=SETTINGS)
+        opening = service.start_cycle(stored_feeds(stored_snapshot(gate_records())), NOW)
+        request = validation_request(opening)
+        weather = service.on_assessment_request(request, request.envelope.created_at_utc)
+        when = request.envelope.created_at_utc + timedelta(seconds=1)
+        service.on_weather_reply(
+            weather_reply(weather.envelope.message_id, opening, when),
+            "no_material_impact",
+            "TEST-weather",
+            when,
+        )
+        (ready,) = service.advance(when + timedelta(seconds=1)).ready
+        candidate = service.candidates[ready.candidate_id]
+        self.assertIsNotNone(candidate.projection_id)
+        self.assertNotIn(BACKLOG_NOTE, candidate.assumptions)
+        metrics = {m.name: m.value for m in candidate.traffic_metrics}
+        self.assertEqual(metrics["departure_demand_confirmed"], 2)
+        self.assertTrue(any("already in the backlog" in a for a in candidate.assumptions))
 
     def test_unconfigured_service_is_unchanged(self) -> None:
         service = CongestionService()

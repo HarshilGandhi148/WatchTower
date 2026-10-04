@@ -96,6 +96,37 @@ Readiness/capacity assumptions stay explicit. Baseline and proposal use identica
 snapshot/model/demand; only declared response parameters change. Missing live
 demand gives unavailable departure metrics, not invented flights.
 
+### Flight record gate times (proposal, congestion owner → database owner)
+
+Congestion can observe the initial departure backlog instead of using operator
+settings, once stored flight records carry gate times. The congestion side is
+implemented: `stored_feeds` reads the fields, and `prepare_projection` prefers an
+observed backlog. It stays inactive until both database changes below land.
+
+1. **`ingest_flight_records`:** also accept the optional per-record keys
+   `gate_scheduled_utc` and `gate_actual_utc`. Each is a canonical UTC millisecond
+   string or `null` (scheduled/actual gate-out for departures, gate-in for arrivals).
+   Within one batch every record either has both keys or neither. Congestion treats the
+   backlog as observed only when every record has both, so an empty batch or one without
+   the keys still means "not observed".
+2. **`projectionInputs`** (store_projection): when the stored batch carries gate keys,
+   derive the backlog and exclude those flights from demand, as
+   `agents/congestion/metrics.py::departure_backlog` does at the window start.
+   - Consider confirmed, uncancelled departures whose `time_kind` is not `actual_runway`.
+   - **Runway queue:** `gate_actual_utc` ≤ window start.
+   - **Upstream waiting:** `gate_actual_utc` null and `gate_scheduled_utc` ≤ window start.
+   - Exclude both groups from the demand buckets.
+   - Require `initial_upstream_waiting`/`initial_runway_queue` to equal these counts.
+   Without gate keys, keep today's rule: every departure is demand, and the backlog
+   counts are operator settings.
+
+The AeroAPI parser already produces both fields (`data/flightaware.py::DemandRecord`).
+Whoever serializes flight records for ingestion should include them once the reducer
+accepts them. Before change 2, a projection from an observed backlog would be rejected
+as "Projection demand not supported by stored records". Change 1 alone therefore must
+not ship. `agents/congestion/tests/test_projections.py::ObservedBacklogTests` shows the
+expected counts.
+
 ## SpacetimeDB and frontend
 
 The observation foundation implements three public tables, private service

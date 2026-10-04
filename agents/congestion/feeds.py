@@ -30,6 +30,14 @@ class FeedSnapshot:
     demand_records: tuple[DemandRecord, ...] | None = None
     demand_fetched_at_utc: datetime | None = None
     demand_evidence_id: str | None = None
+    # True only when every stored flight record carried gate_scheduled_utc and
+    # gate_actual_utc (possibly null), so the departure backlog can be observed.
+    demand_gate_times: bool = False
+
+
+def _optional_utc(record: dict[str, Any], key: str) -> datetime | None:
+    value = record.get(key)
+    return utc(value) if value else None
 
 
 def stored_feeds(value: dict[str, Any]) -> FeedSnapshot:
@@ -40,6 +48,7 @@ def stored_feeds(value: dict[str, Any]) -> FeedSnapshot:
     demand = None
     demand_fetched = None
     demand_id = None
+    gate_times = False
     faa_ids: list[tuple[str, str]] = []
     start = utc(value["window_start_utc"])
     health = {row["provider"]: row for row in value["health"]}
@@ -59,8 +68,13 @@ def stored_feeds(value: dict[str, Any]) -> FeedSnapshot:
                         time_kind=TimeKind(r["time_kind"]) if r["time_kind"] else None,
                         association=Association(r["association"]),
                         cancelled=r["cancelled"],
+                        gate_scheduled_utc=_optional_utc(r, "gate_scheduled_utc"),
+                        gate_actual_utc=_optional_utc(r, "gate_actual_utc"),
                     )
                     for r in payload["records"]
+                )
+                gate_times = bool(payload["records"]) and all(
+                    "gate_scheduled_utc" in r and "gate_actual_utc" in r for r in payload["records"]
                 )
             continue
         source = dict(payload["snapshot"])
@@ -121,4 +135,5 @@ def stored_feeds(value: dict[str, Any]) -> FeedSnapshot:
         demand,
         demand_fetched,
         demand_id,
+        gate_times,
     )

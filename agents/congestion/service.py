@@ -164,7 +164,11 @@ class CongestionService:
                     now_utc=now,
                     horizon_minutes=horizon,
                     nearby=nearby,
-                    demand=demand_windows(
+                    # With an observed backlog, those flights are the initial queue and
+                    # are excluded from demand, exactly as the projection used it.
+                    demand=prepared.demand
+                    if prepared
+                    else demand_windows(
                         feeds.demand_records, feeds.demand_fetched_at_utc, now, horizon
                     ),
                     evidence=refs,
@@ -174,7 +178,7 @@ class CongestionService:
                     faa=feeds.faa,
                     comparison=prepared.comparison if prepared else None,
                     thresholds=thresholds,
-                    backlog_observed=prepared is None,
+                    backlog_observed=prepared.backlog_observed if prepared else True,
                 )
             )
 

@@ -123,10 +123,10 @@ items remain open in docs/quality-control.md.
 The AeroAPI parser, budget guard, injected-transport fetch helper and deterministic
 backlog calculations are retained. The fetch helper lives in `data/flightaware_fetch.py`
 and is not scheduled by the runtime. `ENABLE_FLIGHTAWARE` does not enable paid polling.
-With `DEPARTURE_CAPACITY_PER_HOUR`, `DEPARTURE_BACKLOG_UPSTREAM` and
-`DEPARTURE_BACKLOG_RUNWAY_QUEUE` all set, the stored-snapshot agent prepares a projection
+With `DEPARTURE_CAPACITY_PER_HOUR` set, the stored-snapshot agent prepares a projection
 from the snapshot's stored FlightAware batch. It stores the projection through
 `store_projection` before the candidate that cites it (see agents/congestion/README.md).
-The backlog is operator-configured because stored flight records carry no gate times.
+Stored flight records carry no gate times yet, so the backlog comes from the operator
+fallback settings. The gate-time proposal in docs/interfaces.md would let it be observed.
 Scheduling FlightAware ingestion remains a separate integration step. The existing TEST
 projection storage/retrieval gate is unchanged.

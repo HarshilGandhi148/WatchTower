@@ -34,27 +34,28 @@ implementations are still owner workstreams.
 
 ## Projections from stored snapshots
 
-projections.py prepares one baseline-vs-proposal projection per snapshot when all of
-`DEPARTURE_CAPACITY_PER_HOUR`, `DEPARTURE_BACKLOG_UPSTREAM` and
-`DEPARTURE_BACKLOG_RUNWAY_QUEUE` are set. Setting only some of them is a configuration
-error.
+projections.py prepares one baseline-vs-proposal projection per snapshot when
+`DEPARTURE_CAPACITY_PER_HOUR` is set.
 
 - **Demand:** the snapshot's stored FlightAware batch only: confirmed, uncancelled
-  departures with a runway time, in five-minute buckets spread evenly per minute. This is
-  exactly what the `store_projection` reducer re-derives. The batch must be at most
-  5 minutes old at the window start. Missing or stale demand gives no projection, never
-  zero-valued results.
-- **Backlog:** stored flight records have no gate times, so the initial upstream waiting
-  and runway queue are operator settings, labelled "not observed". Candidates citing such a
-  projection have limited quality and say so in their assumptions.
+  departures with a runway time, in five-minute buckets spread evenly per minute. The
+  batch must be at most 5 minutes old at the window start. Missing or stale demand gives
+  no projection, never zero-valued results.
+- **Backlog, observed:** when every stored record carries `gate_scheduled_utc` and
+  `gate_actual_utc`, the backlog comes from them. Pushed back = runway queue; past
+  scheduled gate-out = upstream. Those flights are excluded from demand so none is
+  counted twice.
+- **Backlog, operator fallback:** otherwise `DEPARTURE_BACKLOG_UPSTREAM` and
+  `DEPARTURE_BACKLOG_RUNWAY_QUEUE` (both or neither) are used, labelled "not observed",
+  and candidates citing the projection have limited quality. With neither, there is no
+  projection.
 - **Proposal:** release at the configured capacity for the whole horizon. The baseline
   has no response.
 - **Persistence:** the payload (`projection_id = proj-<snapshot_id>`) is stored through
   `adapter.store_projection` before the candidate that cites it. Retries resend the
   identical payload. Validation recomputes it on retrieval.
 
-Live projections need stored FlightAware batches, and FlightAware ingestion is not
-scheduled yet. Observed backlog would need gate times in stored flight records; both
-are database/ingestion changes outside this folder.
-
-See [setup and verification](../../docs/congestion-spacetime.md).
+Today's database stores no gate times, and its projection check counts every departure
+as demand. Only the operator fallback is accepted until the gate-time proposal in
+docs/interfaces.md lands. FlightAware ingestion is also not scheduled yet, so live
+projections need stored FlightAware batches.
