@@ -10,12 +10,17 @@ ledger and the log. This factory never starts a server, registers an endpoint, a
 an advisory or writes observations or decisions. Put the returned agent in
 ``runtime.bureau.build_bureau`` (not ``build_coordinated_bureau``, which would register
 orchestration a second time).
+
+Run alone, ``python -m agents.validation.agent`` from the repository root starts only
+this agent: its mailbox, Agent inspector link and ASI:One chat. Coordination waits until
+congestion and weather agents send it cases.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -56,6 +61,7 @@ class AgentConfig:
     llm: LlmSettings = field(default_factory=LlmSettings)
     validation: ValidationConfig = field(default_factory=ValidationConfig)
     mailbox: bool = True  # lets ASI:One reach the chat; connect it once via the inspector
+    port: int = 8002  # local server port when run alone; the Bureau uses its own
 
     @classmethod
     def from_env(cls, env: Mapping[str, str]) -> AgentConfig:
@@ -69,7 +75,17 @@ class AgentConfig:
             congestion_address=env["CONGESTION_AGENT_ADDRESS"].strip(),
             database=SpacetimeSettings.from_env(env, role="validation"),
             llm=LlmSettings.from_env(env),
+            port=_port(env),
         )
+
+
+def _port(env: Mapping[str, str]) -> int:
+    text = env.get("VALIDATION_AGENT_PORT", "").strip()
+    if not text:
+        return 8002
+    if not text.isdigit() or not 1 <= int(text) <= 65535:
+        raise ValueError("VALIDATION_AGENT_PORT must be a port number")
+    return int(text)
 
 
 class ValidationCallbacks:
@@ -139,6 +155,7 @@ def build_agent(
     agent = Agent(
         name=AGENT_NAME,
         seed=config.seed,
+        port=config.port,
         loop=loop,
         mailbox=config.mailbox,
         publish_agent_details=config.mailbox,
@@ -172,3 +189,18 @@ def build_agent(
     responder = ChatResponder(ledger, config.llm, transport=llm_transport)
     agent.include(build_chat_protocol(responder, clock), publish_manifest=True)
     return agent
+
+
+def main() -> None:
+    """Start only the validator (mailbox, inspector, chat); values come from the environment."""
+    logging.basicConfig(level=logging.INFO)
+    try:
+        config = AgentConfig.from_env(os.environ)
+    except ValueError as error:
+        raise SystemExit(f"Validation agent not started: {error}") from None
+    agent = build_agent(config)
+    agent.run()  # type: ignore[no-untyped-call]  # the pinned SDK leaves run() unannotated
+
+
+if __name__ == "__main__":
+    main()

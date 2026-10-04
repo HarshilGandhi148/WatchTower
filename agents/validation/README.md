@@ -57,10 +57,24 @@ displayed data; it never changes the action, parameters, wording or verdict.
 | `SPACETIMEDB_HTTP_URL`, `SPACETIMEDB_DATABASE`, `SPACETIMEDB_VALIDATION_TOKEN` | yes | Read stored records; record receipts (validation role) |
 | `ASI_ONE_API_KEY` | no | Model-phrased chat answers; `ASI_ONE_BASE_URL` and `ASI_ONE_MODEL` are optional |
 
-The agent uses an Agentverse mailbox so ASI:One can reach the chat. On the first run,
-open the Agent inspector link from the log, choose **Connect → Mailbox** and restart,
-as for the demo. Grant the validation database role as in
-docs/congestion-spacetime.md.
+The agent uses an Agentverse mailbox so ASI:One can reach the chat. Grant the
+validation database role as in docs/congestion-spacetime.md.
+
+### Run it alone (inspector, mailbox, chat)
+
+From the **repository root**, with the variables above set in the terminal (cmd: no
+quotes around values):
+
+```bat
+python -m agents.validation.agent
+```
+
+Running `python agent.py` inside `agentsalidation` fails with `No module named
+'agents'`, because Python then cannot see the repository root. On the first run, open
+the **Agent inspector** link from the log, choose **Connect → Mailbox**, then restart.
+`VALIDATION_AGENT_PORT` (default 8002) avoids the demo's 8001. Run alone, the chat
+works at once. Coordination waits for congestion and weather to send cases, and
+database recovery is retried in the log if the database is unreachable.
 
 ## Pending
 

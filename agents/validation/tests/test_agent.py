@@ -59,6 +59,20 @@ class ConfigTests(TestCase):
         for secret in ("TEST ONLY validation identity", "TEST-key", "TEST-token"):
             self.assertNotIn(secret, text)
 
+    def test_standalone_port(self) -> None:
+        self.assertEqual(AgentConfig.from_env(ENV).port, 8002)
+        self.assertEqual(AgentConfig.from_env({**ENV, "VALIDATION_AGENT_PORT": "8010"}).port, 8010)
+        for bad in ("0", "70000", "abc", "-1"):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                AgentConfig.from_env({**ENV, "VALIDATION_AGENT_PORT": bad})
+
+    def test_main_reports_missing_configuration_without_starting(self) -> None:
+        from agents.validation import agent as module
+
+        with patch.dict("os.environ", {}, clear=True), self.assertRaises(SystemExit) as raised:
+            module.main()
+        self.assertIn("VALIDATION_AGENT_SEED", str(raised.exception))
+
 
 class FactoryTests(TestCase):
     def setUp(self) -> None:
