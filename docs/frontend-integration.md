@@ -11,7 +11,7 @@ for display. These types do not claim to match database tables or reducer wire
 arguments. Map generated SDK types into them inside the integration adapter;
 never hand-copy database rows or edit generated bindings.
 
-Implement `DashboardTransport` from `frontend/src/lib/connection.ts`, then create
+For the remaining advisory/controller integration, implement `DashboardTransport` from `frontend/src/lib/connection.ts`, then create
 a client with `createDashboardClient(transport)` and supply it to `App`. Preserve
 the unconfigured default until this adapter is implemented and tested.
 
@@ -32,6 +32,20 @@ the unconfigured default until this adapter is implemented and tested.
   with a safe, actionable error. Document how acknowledgements are correlated.
 - Server authorization, current version, expiry, snapshot/evidence changes,
   atomic conflict handling and idempotency are required. UI gating is advisory.
+
+## Implemented observation foundation
+
+The production entrypoint supplies `spacetimeTransport.ts` to the dashboard.
+It uses the reviewed 2.10.2 bindings and subscribes to weather records, aircraft
+observations, and source health. Observation readiness requires all three
+subscriptions. Reconnect replaces cached collections and obsolete callbacks are
+ignored. An interval ages data even when no new rows arrive. Aircraft position
+time subtracts the provider-reported position age from its observation timestamp;
+missing age/coordinates and positions older than 120 seconds are excluded.
+Nearby count is unknown when current coverage cannot be established and never
+represents airport demand. Controller session is null, unsupported collections
+are empty, and commands reject. Full advisory readiness and live release gates
+below remain pending.
 
 ## Data semantics
 

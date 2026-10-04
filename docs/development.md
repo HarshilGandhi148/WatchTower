@@ -22,30 +22,74 @@ pending. Add direct HTTP/XML/environment dependencies as their adapters are
 implemented, then regenerate the runtime lock with the command in its header.
 Do not hand-edit generated dependency hashes.
 
-The backend workspace reserves a TypeScript module using spacetimedb/server;
-the frontend SDK must match the tested database release before bindings are
-generated. Local typechecking is not a deployed-host compatibility test.
+## Local SpacetimeDB observation foundation
 
-## When SpacetimeDB access arrives
+CLI, standalone server and both JavaScript SDKs are pinned to 2.10.2. Check
+`spacetime --version`; install/use that version with the CLI version commands
+when necessary. The backend and frontend npm lockfiles must be reviewed together.
 
-1. Select and record a tested 2.x CLI, SDK/module, and server combination.
-2. Fill SPACETIMEDB_HTTP_URL, SPACETIMEDB_WS_URL, SPACETIMEDB_DATABASE and
-   the four separate service tokens in root .env.
-3. Implement tables, role checks, and reducers. Test with unassigned and wrong-role
-   identities; test simultaneous/idempotent controller requests.
-4. Implement shared/spacetimedb_adapter.py using documented HTTP reducer/snapshot
-   calls. Do not build a custom Python WebSocket client.
-5. Generate bindings from the exact schema into frontend/src/module_bindings/;
-   replace its placeholder README with the recorded generation provenance.
-6. Set only public VITE_SPACETIMEDB_WS_URL, VITE_SPACETIMEDB_DATABASE,
-   and VITE_DISPLAY_TIMEZONE in frontend/.env. Controller tokens come from
-   each user's session flow, not from VITE variables.
+After npm ci in both workspaces, copy frontend/.env.example to frontend/.env
+if you do not already have a local file. Preserve existing local settings. The
+example connects to ws://127.0.0.1:3000 / watchtower-local. Root spacetime.json
+points to the existing backend/module and frontend; do not run a new template.
 
-Do not publish the empty module as an implementation of the planned backend.
+Terminal 1, repository root:
+
+```sh
+spacetime start --listen-addr 127.0.0.1:3000
+```
+
+Terminal 2, repository root:
+
+```sh
+spacetime dev --delete-data=never
+```
+
+The dev command publishes the implemented observation module, regenerates
+bindings, watches changes and starts Vite. Confirm the publish target is the
+local server; no automatic data deletion is configured. Open the Vite URL
+(normally http://localhost:5173). Without provider ingestion it should show
+Connected / No live observations, never fabricated aircraft. The first publish
+records the publisher's identity as administrator. Local database names can be
+overridden in the already-ignored spacetime.local.json; update both environment
+files to match. Do not use the database test fixtures as demo/live input.
+
+## Authorizing ingestion
+
+Create a separate ingestion identity through local POST /v1/identity. Store its
+token only in ignored root .env or the launcher's environment; never capture
+response headers in committed files. Run the following with the publishing
+CLI identity, replacing the public identity placeholder:
+
+```sh
+spacetime call watchtower-local set_ingestion_permission '"<64-character-identity-hex>"' true
+```
+
+The administrator can revoke it by calling the same reducer with false. The
+administrator itself cannot ingest; browser sessions are read-only. Settings
+read SPACETIMEDB_HTTP_URL, SPACETIMEDB_DATABASE and SPACETIMEDB_INGEST_TOKEN
+from process environment (the launcher must load/export .env). No secrets are
+provisioned or production observations seeded by repository setup.
+
+Provider parsers/polling are still pending. Their integration boundary is
+shared.contracts.WeatherRecord / AircraftBatch / SourceFailure and the adapter's
+async ingest_weather_record / ingest_aircraft_batch / report_source_failure
+methods. Read methods query only the public observation tables, bounded to
+1000 rows. Refer to docs/interfaces.md for normalized units and UTC encoding.
+
+## Checks
+
+Activate .venv so Python, Ruff and mypy use the same installed dependencies.
+Run `make check` for repository, unit, lint, type and build checks.
+Run `make check-spacetime` for the required real database gate. It creates an
+isolated temporary local server and unique TEST database, verifies two SDK
+clients and Python access, and compares regenerated bindings. It needs no
+provider credentials and fails if CLI/server 2.10.2 is unavailable. CI runs both
+gates. This verifies the observation foundation, not the operational release.
 
 ## Eventual live start order
 
-After implementation and release gates: start/publish the database, provision
+After the remaining implementation and release gates: start/publish the database, provision
 identities, generate bindings, start provider ingestion, verify one live
 observation and health record, start the Bureau with exactly three agents,
 then start the dashboard. Keep controllers read-only until authorization,

@@ -46,7 +46,9 @@ demand gives unavailable departure metrics, not invented flights.
 
 ## SpacetimeDB and frontend
 
-The backend owner adds the 13 tables and 12 reducer names from plan section 9
+The observation foundation implements three public tables, private service
+permissions and ingestion reducers. The remaining product implementation adds
+the rest of the 13 planned tables and 12 reducer names from plan section 9
 under backend/module/src/tables/ and reducers/. Every reducer checks the caller
 and relevant version; browser button state is not authorization.
 
@@ -65,8 +67,52 @@ reconnect reloads current versions. Browser environment exposes only WS URL,
 database name, and display timezone. Controller auth belongs to per-session
 identity flow; no shared service token is shipped to the browser.
 
+## Connected foundation interface proposal
+
+This first schema implements latest METAR, latest nearby aircraft, and source
+health only. Provider parsers, agent payloads, evidence and decisions remain pending.
+Public tables: weather_records (AWC, KDTW), aircraft_observations (ADSB.lol),
+source_health. A private service_permissions table stores identity/role only.
+The publishing identity is the sole administrator; set_ingestion_permission
+takes identity_hex (64 lowercase hexadecimal characters) and enabled (boolean),
+and grants/revokes ingestion for other identities. No automatic browser write role.
+
+Reducers ingest_weather_record, ingest_aircraft_batch and report_source_failure
+each take one payload_json string. HTTP calls therefore send [serialized_payload].
+Payloads use schema_version=1, data_mode=live, provider=awc or adsb_lol,
+source_ref (nonempty public reference), fetched_at_utc and observed_at_utc where
+applicable. Times are canonical YYYY-MM-DDTHH:MM:SS.sssZ, stored as native UTC
+Timestamps. Optional measurements are JSON null, never implicit zero.
+Weather: airport_icao=KDTW, record_type=METAR, wind_direction_deg, wind_speed_kt,
+wind_gust_kt, visibility_m, ceiling_ft. Aircraft batches carry observations:
+aircraft_id, observed_at_utc, latitude_deg, longitude_deg, altitude_ft,
+speed_kt, track_deg, position_age_s, on_ground (nullable boolean).
+Failed fetch payloads contain only the envelope and no observation fields.
+Unknown keys and explicitly non-live input are rejected. The ingestion service
+is the provenance trust boundary: a live label alone cannot authenticate a source.
+
+Batches are bounded to 1000 observations; identifiers to 128 characters; source
+references to 2048 characters; payloads to 1 MiB. Duplicate aircraft IDs in a batch
+are rejected. Observation times cannot exceed fetch time; fetches cannot be more
+than 60 seconds ahead of server time. Equal observation time and equal content
+is a retry; differing content is a conflict. New fetch times may refresh health
+without altering unchanged observations. Older updates never replace latest rows.
+Health is ordered by fetch time; an equal-time conflicting outcome is rejected.
+Empty success batches preserve positions and report no coverage guarantee.
+
+Python exports typed WeatherRecord, AircraftObservation, AircraftBatch and
+SourceFailure DTOs and asynchronous adapter methods for writes and bounded
+read_observations(table) queries (maximum 1000 rows, fixed table allowlist).
+SQL responses are decoded using returned column names; tagged options become
+Python None or values and native timestamps become aware UTC datetimes.
+Failures expose safe error categories/status, never raw bodies or headers.
+
+Schema and generated bindings are one review surface; integration and frontend
+owners review this proposal alongside the backend implementation.
+
 ## Frontend adapter handoff
 
 The frontend display boundary and pending live verification are documented in
 [frontend integration](frontend-integration.md). Display types are presentation
-models, not generated database row contracts. Real SDK integration remains pending.
+models, not generated database row contracts. The observation SDK adapter is
+implemented; advisory and controller integration remain pending.

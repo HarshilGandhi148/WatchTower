@@ -1,0 +1,14 @@
+{
+  "database": "watchtower-local",
+  "server": "http://127.0.0.1:3000",
+  "module-path": "backend/module",
+  "generate": [
+    {
+      "language": "typescript",
+      "out-dir": "frontend/src/module_bindings"
+    }
+  ],
+  "dev": {
+    "run": "npm --prefix frontend run dev"
+  }
+}

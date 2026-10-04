@@ -4,9 +4,10 @@ DTW / KDTW flow advisory prototype with exactly three cooperating agents and a
 separate React frontend. The architecture and requirements live in
 [full_technical_plan.md](full_technical_plan.md).
 
-This repository is a development scaffold. Agent logic, provider integrations,
-SpacetimeDB tables/reducers, and live subscriptions remain to be implemented.
-The frontend starts disconnected and does not present synthetic data as live.
+This repository implements a local SpacetimeDB observation foundation: authorized
+weather/aircraft ingestion, source health, a Python HTTP bridge, and React
+subscriptions. Provider polling, specialist logic, projections and advisory
+decisions remain pending. No synthetic observations are seeded into the app.
 
 Workflow orchestration is implemented in the Validation / Coordinating Agent,
 with typed Fetch.ai messages and a three-agent Bureau builder. Specialist
@@ -75,12 +76,13 @@ make check
 npm --prefix frontend run dev
 ```
 
-The scaffold checks do not need API credentials. Do not enable a provider or
+The unit/build checks do not need API credentials. The local database test uses
+its own temporary identities and TEST database. Do not enable a provider or
 decision flow until its release gates pass. Each contributor should use a
 separate clone/worktree and their own .env.
 
-[Setup and eventual start order](docs/development.md) explains the SpacetimeDB
-placeholders, locked runtime dependencies, and binding generation.
+[Local database setup and eventual start order](docs/development.md) explains
+`spacetime dev`, locked runtime dependencies, and binding generation.
 [Ownership](docs/ownership.md), [contributing](CONTRIBUTING.md), and
 [quality control](docs/quality-control.md) explain how four people work together.
 
@@ -92,9 +94,11 @@ placeholders, locked runtime dependencies, and binding generation.
   serialization, coordinator behavior, and SDK registration with mocked services.
 - `make check-python`: policy, tests, Ruff lint/format, strict mypy.
 - `make check-js`: backend/frontend lint, format, TypeScript checks, frontend
-  tests, production frontend build.
+  tests, backend reducer-rule tests, production frontend build.
 - `make check`: the same application checks required by CI.
-- CI also scans commit history with Gitleaks.
+- `make check-spacetime`: real local database, Python HTTP calls, two SDK clients,
+  authorization, rollback, concurrent updates and generated-binding consistency.
+- CI also runs the database gate and scans commit history with Gitleaks.
 
 CI configuration takes effect after the files are pushed. CODEOWNERS needs real
 usernames, and protected-branch settings must be enabled in GitHub; see

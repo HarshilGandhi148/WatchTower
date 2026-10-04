@@ -9,9 +9,10 @@ npm ci
 npm run dev
 ```
 
-The normal application is deliberately disconnected until the integration owner
-supplies reviewed SpacetimeDB bindings and controller sessions. Providing the
-three public settings in `.env.example` does not establish a live connection.
+The normal application connects to the observation foundation using the three
+public settings in `.env.example`. Run the local backend with `spacetime dev`
+from the repository root. Without valid settings the dashboard is unconfigured.
+Advisories, projections, history, and controller sessions remain unavailable.
 There are no fixtures or synthetic observations in the production entrypoint.
 
 For the separate sample-data preview (shown as **Demo mode**):
@@ -88,15 +89,16 @@ when an observed true track is supplied; unknown track is identified in details.
 References: [OpenFreeMap](https://openfreemap.org/quick_start/),
 [FAA KDTW reference](https://www.faa.gov/air_traffic/publications/atpubs/aip_html/part3_ad_2.0_michigan.html).
 
-## Backend handoff — pending
+## Backend handoff — observation foundation connected
 
 See [frontend integration handoff](../docs/frontend-integration.md). Display
 models in `src/features/live/types.ts` are frontend presentation contracts,
 not database row copies. `src/lib/connection.ts` defines an adapter interface
-and a fail-closed subscription/request lifecycle. The default app installs no
-transport until a real generated-binding adapter is available.
+and a fail-closed subscription/request lifecycle. The production entrypoint installs `src/lib/spacetimeTransport.ts`, which
+subscribes to the three public observation tables using reviewed generated bindings.
+It reconnects and keeps sessions read-only. Controller integration remains pending.
 
-The official SDK must be pinned to the exact tested module/host release. Generated
+The official SDK, module and host are pinned to 2.10.2. Generated
 bindings belong in the backend schema PR and must never be edited by hand.
 Controller session credentials must not enter browser environment variables.
 

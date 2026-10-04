@@ -23,7 +23,25 @@ writes, or reducer permissions. Review and product tests must cover those cases.
 CODEOWNERS is a template until usernames are assigned. GitHub protection must be
 enabled; configuration files alone do not block merges.
 
-## Product acceptance checklist — all pending
+## Observation foundation verification
+
+Verified locally with CLI/server/module/client 2.10.2 on October 4, 2026:
+
+- [x] Normalized observation contracts, UTC/null encoding and HTTP error redaction.
+- [x] Real module publication, Python HTTP writes/reads and two SDK subscriptions.
+- [x] Ingestion grants/revocation, anonymous/wrong-role denial, private table
+  visibility, atomic rollback, retries and concurrent/out-of-order observations.
+- [x] React empty/error/disconnected states, subscription readiness, aging and
+  Detroit DST formatting; generated bindings checked against the schema.
+
+Evidence: backend/module/tests/validation.test.ts,
+tests/contracts/test_observations.py, frontend/src/App.test.tsx,
+frontend/src/lib/spacetimeTransport.test.ts, frontend/src/lib/freshness.test.ts and
+`make check-spacetime` (tests/integration/spacetimedb_live.py).
+The integration gate uses a synthetic TEST database, not real provider coverage.
+CI is configured to run it; remote CI results require pushing the change.
+
+## Product acceptance checklist — remaining release gates
 
 Track implementation evidence in PRs and check items only after the relevant
 behavior exists and has been verified. A scaffold test is not operational evidence.

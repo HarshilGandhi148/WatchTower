@@ -1,3 +1,4 @@
+import { DbConnection } from '../module_bindings';
 import type {
   CommandAcknowledgement,
   ControllerCommand,
@@ -10,8 +11,8 @@ import {
 } from '../features/advisories/policy';
 import { frontendConfig } from './config';
 
-// A display adapter contract, not an imitation of the pending SpacetimeDB SDK.
-// ready must supply a complete, synchronized state including assignments.
+// A display adapter contract mapped from reviewed SpacetimeDB bindings.
+// ready supplies synchronized available data; unsupported assignments stay null.
 export interface DashboardTransport {
   connect(events: {
     synchronizing: () => void;
@@ -237,4 +238,24 @@ export function createDashboardClient(
       return result;
     },
   };
+}
+
+export function createConnectionBuilder() {
+  const { spacetimeWsUrl, spacetimeDatabase } = frontendConfig;
+  if (!spacetimeWsUrl || !spacetimeDatabase) return undefined;
+  try {
+    const url = new URL(spacetimeWsUrl);
+    if (!['ws:', 'wss:'].includes(url.protocol) || url.username || url.password)
+      return undefined;
+    if (
+      url.protocol === 'ws:' &&
+      !['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)
+    )
+      return undefined;
+    return DbConnection.builder()
+      .withUri(spacetimeWsUrl)
+      .withDatabaseName(spacetimeDatabase);
+  } catch {
+    return undefined;
+  }
 }
