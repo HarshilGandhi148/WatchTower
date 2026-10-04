@@ -71,7 +71,8 @@ read SPACETIMEDB_HTTP_URL, SPACETIMEDB_DATABASE and SPACETIMEDB_INGEST_TOKEN
 from process environment (the launcher must load/export .env). No secrets are
 provisioned or production observations seeded by repository setup.
 
-Provider parsers/polling are still pending. Their integration boundary is
+ADSB/FAA parsers and independent polling are implemented in data/ingestion.py.
+AWC polling and optional paid providers remain pending. The observation boundary is
 shared.contracts.WeatherRecord / AircraftBatch / SourceFailure and the adapter's
 async ingest_weather_record / ingest_aircraft_batch / report_source_failure
 methods. Read methods query only the public observation tables, bounded to
@@ -85,7 +86,8 @@ Run `make check-spacetime` for the required real database gate. It creates an
 isolated temporary local server and unique TEST database, verifies two SDK
 clients and Python access, and compares regenerated bindings. It needs no
 provider credentials and fails if CLI/server 2.10.2 is unavailable. CI runs both
-gates. This verifies the observation foundation, not the operational release.
+gates. This verifies the observation and congestion persistence path using a TEST
+weather double; operational release gates remain open.
 
 ## Eventual live start order
 
@@ -100,3 +102,7 @@ and a monetary cap are configured. Fixtures are imported only by tests, and quie
 live conditions must remain quiet in the demonstration.
 
 The full fault/quiet-data rehearsal and two-session demo follow plan section 13.
+
+
+The [congestion integration guide](congestion-spacetime.md) documents separate service
+grants, ingestion startup, immutable evidence, durable deliveries and owner handoffs.

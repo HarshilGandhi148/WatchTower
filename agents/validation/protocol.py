@@ -7,7 +7,8 @@ from datetime import UTC, datetime
 from uagents import Agent, Context, Protocol
 from uagents_core.types import DeliveryStatus
 
-from agents.validation.orchestrator import CaseRecord, Dispatch, OrchestrationError, Orchestrator
+from agents.validation.orchestrator import CaseRecord, Dispatch, Orchestrator
+from agents.validation.storage import ValidationStorage
 from shared.contracts import AgentName
 from shared.messages import AssessmentRequestMessage, CandidateReadyMessage, CaseOpenedMessage
 from shared.orchestration import CandidateReady, ValidationVerdict
@@ -25,17 +26,43 @@ class ValidationGateway:
     """
 
     def __init__(
-        self, coordinator: Orchestrator, validate: ValidateCandidate, persist: PersistOutcome
+        self,
+        coordinator: Orchestrator,
+        validate: ValidateCandidate,
+        persist: PersistOutcome,
+        storage: ValidationStorage | None = None,
+        *,
+        recover_on_start: bool = False,
     ) -> None:
         self.coordinator = coordinator
         self.validate = validate
         self.persist = persist
+        self.storage = storage
+        self._recovered = not recover_on_start
+        self._startup_lock = asyncio.Lock()
+        self._candidate_lock = asyncio.Lock()
         self._notification_lock = asyncio.Lock()
+
+    async def _recover(self) -> None:
+        async with self._startup_lock:
+            if not self._recovered:
+                if self.storage is not None:
+                    await self.storage.restart()
+                self._recovered = True
+
+    async def startup(self, ctx: Context) -> None:
+        try:
+            await self._recover()
+        except Exception:
+            ctx.logger.error("Case recovery unavailable; new messages remain blocked")
 
     async def handle_open(self, ctx: Context, sender: str, message: CaseOpenedMessage) -> None:
         try:
+            await self._recover()
+            if self.storage is not None:
+                await self.storage.check_open(message.envelope.snapshot_id)
             dispatch = self.coordinator.open_case(sender, message.envelope.to_envelope())
-        except OrchestrationError:
+        except Exception:
             ctx.logger.warning("Rejected invalid case-open message")
             return
         if dispatch is not None:
@@ -45,10 +72,23 @@ class ValidationGateway:
     async def handle_candidate(
         self, ctx: Context, sender: str, message: CandidateReadyMessage
     ) -> None:
+        async with self._candidate_lock:
+            await self._handle_candidate(ctx, sender, message)
+
+    async def _handle_candidate(
+        self, ctx: Context, sender: str, message: CandidateReadyMessage
+    ) -> None:
         try:
-            candidate = self.coordinator.receive_candidate(sender, message.to_candidate())
-        except ValueError:
-            ctx.logger.warning("Rejected invalid candidate message")
+            await self._recover()
+            ready = message.to_candidate()
+            if sender != self.coordinator.addresses[AgentName.CONGESTION]:
+                raise ValueError("Unexpected sender")
+            if self.storage is not None:
+                await self.storage.retrieve(ready)
+                await self.storage.receipt(ready)
+            candidate = self.coordinator.receive_candidate(sender, ready)
+        except Exception:
+            ctx.logger.warning("Rejected or unavailable stored candidate")
             return
         if candidate is None:
             await self.flush_outcomes(ctx)
@@ -93,6 +133,8 @@ class ValidationGateway:
 
     async def _send(self, ctx: Context, dispatch: Dispatch) -> None:
         try:
+            if self.storage is not None:
+                await self.storage.register(dispatch.request)
             status = await ctx.send(
                 dispatch.recipient, AssessmentRequestMessage.from_request(dispatch.request)
             )
@@ -109,11 +151,13 @@ def register_orchestration(
     *,
     validate: ValidateCandidate,
     persist: PersistOutcome,
+    storage: ValidationStorage | None = None,
 ) -> ValidationGateway:
     """Register handlers on the validator; never create a fourth agent."""
     if agent.address != coordinator.addresses[AgentName.VALIDATION]:
         raise ValueError("Attach orchestration only to the configured validation identity")
-    gateway = ValidationGateway(coordinator, validate, persist)
+    gateway = ValidationGateway(coordinator, validate, persist, storage, recover_on_start=True)
+    agent.on_event("startup")(gateway.startup)
     protocol = Protocol(name="watchtower-coordination", version="1.0")
     protocol.on_message(CaseOpenedMessage, replies={AssessmentRequestMessage})(gateway.handle_open)
     protocol.on_message(CandidateReadyMessage, replies={AssessmentRequestMessage})(

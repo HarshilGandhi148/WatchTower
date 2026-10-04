@@ -1,18 +1,26 @@
-"""AeroAPI demand in the congestion agent: backlog, guarded fetch, service projection."""
+"""AeroAPI demand in the congestion agent: backlog, guarded fetch, stored service inputs."""
 
 import json
 from datetime import UTC, datetime, timedelta
-from decimal import Decimal
 from pathlib import Path
 from unittest import TestCase
 
 from agents.congestion.agent import AgentConfig
-from agents.congestion.feeds import AeroApiFetcher, FeedSnapshot
+from agents.congestion.candidates import flow_snapshot_from_demand, project
+from agents.congestion.feeds import FeedSnapshot
 from agents.congestion.metrics import demand_windows, departure_backlog
+from agents.congestion.projections import ProjectionSettings
 from agents.congestion.service import CongestionService
-from data.flightaware import AeroApiConfig, Endpoint, parse_flights
-from projection.assumptions import CapacityBasis, CapacityScenario, ProjectionAssumptions
-from shared.contracts import AgentName, MessageEnvelope, MetricBasis
+from agents.congestion.tests.test_agent import ENV
+from data.flightaware import Endpoint, parse_flights
+from projection.aggregate_flow import ProjectionStatus
+from projection.assumptions import (
+    CapacityBasis,
+    CapacityScenario,
+    ProjectionAssumptions,
+    ResponseParameters,
+)
+from shared.contracts import AgentName, MessageEnvelope
 from shared.orchestration import AssessmentRequest
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -42,12 +50,6 @@ def records() -> tuple:  # type: ignore[type-arg]
     dep = parse_flights(departures_json(), Endpoint.SCHEDULED_DEPARTURES, NOW).records
     arr = parse_flights(arrivals_json(), Endpoint.SCHEDULED_ARRIVALS, NOW).records
     return dep + arr
-
-
-def aero_config(**changes: str) -> AeroApiConfig:
-    config = AeroApiConfig.from_env({**AERO_ENV, **changes})
-    assert config is not None
-    return config
 
 
 class BacklogTests(TestCase):
@@ -83,66 +85,6 @@ class BacklogTests(TestCase):
         self.assertIn("scheduled runway times", joined)
 
 
-class FetcherTests(TestCase):
-    def fake_get(self, *, fail: bool = False, truncated: bool = False):  # type: ignore[no-untyped-def]
-        calls: list[str] = []
-
-        def get(url: str, headers: dict) -> bytes:  # type: ignore[type-arg]
-            calls.append(url)
-            self.assertEqual(headers["x-apikey"], AERO_ENV["FLIGHTAWARE_API_KEY"])
-            if fail:
-                raise OSError("connection reset")
-            if "scheduled_departures" in url:
-                return json.dumps(departures_json()).encode()
-            return json.dumps(arrivals_json(truncated)).encode()
-
-        get.calls = calls  # type: ignore[attr-defined]
-        return get
-
-    def test_fetch_combines_both_endpoints_and_spends_from_the_budget(self) -> None:
-        get = self.fake_get()
-        fetcher = AeroApiFetcher(aero_config(), "UA (TEST)", get=get)
-        recs, fetched_at, error = fetcher.fetch(NOW)
-        assert recs is not None
-        self.assertIsNone(error)
-        self.assertEqual(fetched_at, NOW)
-        self.assertEqual(len(get.calls), 2)
-        self.assertEqual(fetcher.budget.spent_usd, Decimal("0.20"))
-        departures_url, arrivals_url = get.calls
-        self.assertIn("start=2026-10-04T14%3A00%3A00Z", departures_url)  # 2 h lookback
-        self.assertIn("start=2026-10-04T16%3A00%3A00Z", arrivals_url)  # arrivals from now
-        self.assertIn("end=2026-10-04T17%3A00%3A00Z", arrivals_url)
-        self.assertTrue(any(r.flight_id == "TEST-ARR-ESTIMATED" for r in recs))
-
-    def test_cache_prevents_paid_calls_inside_the_refresh_period(self) -> None:
-        get = self.fake_get()
-        fetcher = AeroApiFetcher(aero_config(), "UA (TEST)", get=get)
-        fetcher.fetch(NOW)
-        _, fetched_at, _ = fetcher.fetch(NOW + timedelta(minutes=4))
-        self.assertEqual((len(get.calls), fetched_at), (2, NOW))
-        fetcher.fetch(NOW + timedelta(minutes=5))
-        self.assertEqual(len(get.calls), 4)
-
-    def test_budget_exhaustion_makes_demand_unavailable(self) -> None:
-        get = self.fake_get()
-        fetcher = AeroApiFetcher(aero_config(FLIGHTAWARE_BUDGET_USD="0.15"), "UA", get=get)
-        recs, _, error = fetcher.fetch(NOW)
-        self.assertIsNone(recs)
-        self.assertIn("budget", error or "")
-        self.assertEqual(len(get.calls), 1)  # the refused request was never sent
-
-    def test_failures_and_truncation_are_unavailable_and_never_leak_the_key(self) -> None:
-        for get, expected in (
-            (self.fake_get(fail=True), "OSError"),
-            (self.fake_get(truncated=True), "MAX_PAGES"),
-        ):
-            with self.subTest(expected=expected):
-                recs, _, error = AeroApiFetcher(aero_config(), "UA", get=get).fetch(NOW)
-                self.assertIsNone(recs)
-                self.assertIn(expected, error or "")
-                self.assertNotIn(AERO_ENV["FLIGHTAWARE_API_KEY"], error or "")
-
-
 def validation_request(opening: MessageEnvelope) -> AssessmentRequest:
     from dataclasses import replace
 
@@ -175,7 +117,22 @@ def weather_reply(request_id: str, opening: MessageEnvelope) -> MessageEnvelope:
 
 class ServiceWithFlightsTests(TestCase):
     def candidate(self, service: CongestionService):  # type: ignore[no-untyped-def]
-        opening = service.start_cycle(FeedSnapshot(None, None, (), records(), NOW), NOW)
+        opening = service.start_cycle(
+            FeedSnapshot(
+                None,
+                None,
+                snapshot_id="TEST-stored-snapshot",
+                case_id="TEST-case",
+                evidence_ids=("TEST-stored-flight-batch",),
+                window_start_utc=NOW,
+                window_end_utc=NOW + timedelta(minutes=15),
+                expires_at_utc=NOW + timedelta(seconds=120),
+                demand_records=records(),
+                demand_fetched_at_utc=NOW,
+                demand_evidence_id="TEST-stored-flight-batch",
+            ),
+            NOW,
+        )
         weather = service.on_assessment_request(
             validation_request(opening), NOW + timedelta(seconds=2)
         )
@@ -190,56 +147,46 @@ class ServiceWithFlightsTests(TestCase):
 
     def test_flight_records_become_demand_evidence(self) -> None:
         opening, candidate = self.candidate(CongestionService())
-        self.assertIn("flights-20261004T160000Z", opening.evidence_ids)
+        self.assertIn("TEST-stored-flight-batch", opening.evidence_ids)
         names = {m.name: m.value for m in candidate.traffic_metrics}
-        self.assertEqual(names["departure_demand_confirmed"], 1)
+        self.assertEqual(names["departure_demand_confirmed"], 2)
         self.assertIsNone(candidate.projection_id)  # no capacity configured: no projection
 
-    def test_configured_capacity_produces_a_projection_from_the_backlog(self) -> None:
+    def test_backlog_projection_is_computed_offline_without_publishing_a_reference(self) -> None:
         capacity = CapacityScenario("operator", 30, CapacityBasis.OPERATOR_CONFIGURED)
-        service = CongestionService(projection=ProjectionAssumptions(capacity=capacity))
-        _, candidate = self.candidate(service)
-        self.assertEqual(candidate.projection_id, "proj-20261004T160000Z")
-        projected = [m for m in candidate.traffic_metrics if m.basis is MetricBasis.PROJECTED]
-        self.assertEqual(len(projected), 3)
-        joined = " ".join(candidate.assumptions)
-        self.assertIn("runway queue = departures pushed back", joined)
-        self.assertIn("operator_configured", joined)
-
-    def test_projection_horizon_must_match(self) -> None:
-        capacity = CapacityScenario("operator", 30, CapacityBasis.OPERATOR_CONFIGURED)
-        with self.assertRaises(ValueError):
-            CongestionService(
-                horizon_minutes=15,
-                projection=ProjectionAssumptions(capacity=capacity, horizon_minutes=30),
-            )
+        backlog = departure_backlog(records(), NOW, NOW)
+        demand = demand_windows(records(), NOW, NOW, exclude_flight_ids=backlog.flight_ids)
+        snapshot = flow_snapshot_from_demand(
+            "TEST-stored-snapshot", NOW, demand, backlog.upstream_waiting, backlog.runway_queue
+        )
+        result = project(
+            snapshot, ProjectionAssumptions(capacity=capacity), ResponseParameters(30, 0, 15)
+        )
+        self.assertEqual(result.status, ProjectionStatus.COMPUTED)
+        # The service cannot attach this result until a supported projection is persisted.
+        _, candidate = self.candidate(CongestionService())
+        self.assertIsNone(candidate.projection_id)
 
 
 class AgentConfigTests(TestCase):
-    BASE = {
-        "CONGESTION_AGENT_SEED": "watchtower TEST ONLY congestion identity",
-        "WEATHER_AGENT_ADDRESS": "test-weather-address",
-        "VALIDATION_AGENT_ADDRESS": "test-validation-address",
-        "DATA_USER_AGENT": "WatchTower-tests (TEST)",
-    }
+    def test_paid_settings_do_not_activate_polling(self) -> None:
+        default = AgentConfig.from_env(ENV)
+        self.assertEqual(default, AgentConfig.from_env({**ENV, **AERO_ENV}))
+        self.assertIsNone(default.projection)
 
-    def test_aeroapi_and_capacity_are_off_by_default(self) -> None:
-        config = AgentConfig.from_env(self.BASE)
-        self.assertIsNone(config.aeroapi)
-        self.assertIsNone(config.projection_assumptions())
-
-    def test_enabled_values_are_read_and_validated(self) -> None:
-        config = AgentConfig.from_env(
-            {**self.BASE, **AERO_ENV, "DEPARTURE_CAPACITY_PER_HOUR": "36"}
-        )
-        self.assertIsNotNone(config.aeroapi)
-        assumptions = config.projection_assumptions()
-        assert assumptions and assumptions.capacity
-        self.assertEqual(assumptions.capacity.effective_capacity_per_hour, 36)
-        self.assertEqual(assumptions.capacity.basis, CapacityBasis.OPERATOR_CONFIGURED)
-        for bad in (
-            {"DEPARTURE_CAPACITY_PER_HOUR": "lots"},
-            {**AERO_ENV, "FLIGHTAWARE_BUDGET_USD": ""},
+    def test_projection_settings(self) -> None:
+        capacity = {"DEPARTURE_CAPACITY_PER_HOUR": "36"}
+        backlog = {"DEPARTURE_BACKLOG_UPSTREAM": "4", "DEPARTURE_BACKLOG_RUNWAY_QUEUE": "2"}
+        only_capacity = AgentConfig.from_env({**ENV, **capacity})
+        self.assertEqual(only_capacity.projection, ProjectionSettings(36))
+        with_fallback = AgentConfig.from_env({**ENV, **capacity, **backlog})
+        self.assertEqual(with_fallback.projection, ProjectionSettings(36, 4, 2))
+        for invalid in (
+            backlog,
+            {**capacity, "DEPARTURE_BACKLOG_UPSTREAM": "4"},
+            {**capacity, **backlog, "DEPARTURE_BACKLOG_RUNWAY_QUEUE": "two"},
+            {**capacity, "DEPARTURE_CAPACITY_PER_HOUR": "3"},
+            {**capacity, **backlog, "DEPARTURE_BACKLOG_UPSTREAM": "-1"},
         ):
-            with self.subTest(bad=bad), self.assertRaises(ValueError):
-                AgentConfig.from_env({**self.BASE, **bad})
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                AgentConfig.from_env({**ENV, **invalid})

@@ -132,6 +132,37 @@ Readiness/capacity assumptions stay explicit. Baseline and proposal use identica
 snapshot/model/demand; only declared response parameters change. Missing live
 demand gives unavailable departure metrics, not invented flights.
 
+### Flight record gate times (proposal, congestion owner → database owner)
+
+Congestion can observe the initial departure backlog instead of using operator
+settings, once stored flight records carry gate times. The congestion side is
+implemented: `stored_feeds` reads the fields, and `prepare_projection` prefers an
+observed backlog. It stays inactive until both database changes below land.
+
+1. **`ingest_flight_records`:** also accept the optional per-record keys
+   `gate_scheduled_utc` and `gate_actual_utc`. Each is a canonical UTC millisecond
+   string or `null` (scheduled/actual gate-out for departures, gate-in for arrivals).
+   Within one batch every record either has both keys or neither. Congestion treats the
+   backlog as observed only when every record has both, so an empty batch or one without
+   the keys still means "not observed".
+2. **`projectionInputs`** (store_projection): when the stored batch carries gate keys,
+   derive the backlog and exclude those flights from demand, as
+   `agents/congestion/metrics.py::departure_backlog` does at the window start.
+   - Consider confirmed, uncancelled departures whose `time_kind` is not `actual_runway`.
+   - **Runway queue:** `gate_actual_utc` ≤ window start.
+   - **Upstream waiting:** `gate_actual_utc` null and `gate_scheduled_utc` ≤ window start.
+   - Exclude both groups from the demand buckets.
+   - Require `initial_upstream_waiting`/`initial_runway_queue` to equal these counts.
+   Without gate keys, keep today's rule: every departure is demand, and the backlog
+   counts are operator settings.
+
+The AeroAPI parser already produces both fields (`data/flightaware.py::DemandRecord`).
+Whoever serializes flight records for ingestion should include them once the reducer
+accepts them. Before change 2, a projection from an observed backlog would be rejected
+as "Projection demand not supported by stored records". Change 1 alone therefore must
+not ship. `agents/congestion/tests/test_projections.py::ObservedBacklogTests` shows the
+expected counts.
+
 ## SpacetimeDB and frontend
 
 The observation foundation implements three public tables, private service
@@ -204,3 +235,48 @@ The frontend display boundary and pending live verification are documented in
 [frontend integration](frontend-integration.md). Display types are presentation
 models, not generated database row contracts. The observation SDK adapter is
 implemented; advisory and controller integration remain pending.
+
+
+## Congestion persistence interface proposal
+
+Shared review surface for ingestion, weather, congestion, validation and frontend owners.
+The integration adds no application agent. All new mutating JSON reducers take one
+`payload_json` string; payload times are UTC milliseconds and measurements retain the
+units in their names. `shared/persistence.py` owns storage serialization, candidate
+reconstruction and the `WeatherFinding` DTO. Parser DTOs remain with data adapters.
+
+| Reducer | Authorized role | Contract |
+| --- | --- | --- |
+| set_service_permission | admin | identity_hex, role, enabled; four separate service roles |
+| ingest_feed_batch | ingestion | schema_version=1, data_mode=live, batch_id, provider=adsb_lol/faa, public source_ref, configuration, normalized parser snapshot, coverage_flags |
+| ingest_flight_records | ingestion | normalized airport-associated records with explicit direction, association, cancellation and gate/runway time kind; no paid polling |
+| create_evidence_snapshot | congestion | snapshot_id, case_id, shared airport configuration, original window_start/end_utc, expires_at_utc |
+| register_assessment_request | validation | shared AssessmentRequest; unique case/round, same snapshot, one correction after round 1 |
+| submit_weather_assessment | weather | WeatherFinding; matching case, round, snapshot, window, evidence and bounded expiry |
+| submit_flow_candidate | congestion | candidate plus exact CandidateReady; atomically creates one flow_candidates row and pending_deliveries row |
+| store_projection | congestion | projection_id, snapshot_id, model_version, evidence_ids, input, assumptions, response, result; stored fresh departure-demand evidence required |
+| record_candidate_receipt | validation | candidate_id and exact saved CandidateReady; idempotent receipt, no approval |
+| expire_deliveries | congestion | no arguments; bounded pending-delivery sweep |
+| close_unfinished_cases | congestion/validation | no arguments; closes volatile assessment snapshots, preserves committed notifications |
+| prune_live_observations | ingestion | no arguments; bounded 30-minute live-row/batch retention, preserves copied evidence |
+
+Tables added: feed_batches, latest_feeds, airport_events, flight_records,
+evidence_records, evidence_snapshots, assessment_requests, agent_findings,
+flow_candidates, projection_results, pending_deliveries. Public records contain no
+service tokens. Immutable copied evidence resolves independently of live retention.
+A snapshot includes health/configuration, batch membership, completeness and limitations.
+All retries are compared with canonical JSON; changed ID reuse is rejected. Case/round
+uniqueness is enforced transactionally. Payloads/batches/reads have explicit bounds;
+1001-row reads report incomplete rather than dropping the last row.
+
+Candidates cite the subset of snapshot evidence actually used; notifications retain the
+whole original case evidence set for the orchestration protocol. Weather findings have
+separate IDs and are checked against the same case/round/window. Projection references
+resolve through dedicated derived tables and evidence records. Receipt records delivery,
+not a validation verdict, publication, controller approval or flight-control action.
+
+The existing foundation ingestion reducers stay supported; congestion requires the
+metadata-rich `ingest_feed_batch` path. No fabricated evidence IDs or latest-row scans
+are used to construct congestion evidence. See [integration/setup](congestion-spacetime.md)
+and [frontend handoff](frontend-integration.md). Publication/controller reducers remain
+pending and must use separate authorized version/assignment checks.

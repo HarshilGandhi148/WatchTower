@@ -5,13 +5,15 @@ from unittest import TestCase
 from unittest.mock import MagicMock, patch
 
 from agents.congestion.agent import AgentConfig, build_agent
-from agents.congestion.feeds import FeedSnapshot
 from shared.messages import AssessmentRequestMessage, WeatherAssessmentReplyMessage
 
 ENV = {
     "CONGESTION_AGENT_SEED": "watchtower TEST ONLY congestion identity",
     "WEATHER_AGENT_ADDRESS": "test-weather-address",
     "VALIDATION_AGENT_ADDRESS": "test-validation-address",
+    "SPACETIMEDB_HTTP_URL": "http://127.0.0.1:3000",
+    "SPACETIMEDB_DATABASE": "watchtower-test",
+    "SPACETIMEDB_CONGESTION_TOKEN": "test-token",
     "DATA_USER_AGENT": "WatchTower-tests (TEST)",
 }
 
@@ -24,15 +26,13 @@ class ConfigTests(TestCase):
             self.assertIn(name, str(caught.exception))
             self.assertNotIn(ENV["CONGESTION_AGENT_SEED"], str(caught.exception))
 
-    def test_placeholder_user_agent_is_rejected(self) -> None:
+    def test_invalid_airport_config_is_rejected(self) -> None:
         with self.assertRaises(ValueError):
-            AgentConfig.from_env(
-                {**ENV, "DATA_USER_AGENT": "DTW-Hackathon/<version> (<team-contact>)"}
-            )
+            AgentConfig.from_env({**ENV, "AIRPORT_LATITUDE_DEG": "200"})
 
     def test_feed_settings_come_from_the_environment(self) -> None:
         config = AgentConfig.from_env({**ENV, "TRAFFIC_RADIUS_NM": "25"})
-        self.assertEqual(config.feeds.radius_nm, 25)
+        self.assertEqual(config.airport.radius_nm, 25)
         self.assertEqual(config.weather_address, "test-weather-address")
 
 
@@ -52,9 +52,7 @@ class FactoryTests(TestCase):
         self.addCleanup(self.loop.close)
 
     def build(self):  # type: ignore[no-untyped-def]
-        return build_agent(
-            AgentConfig.from_env(ENV), fetch=lambda _: FeedSnapshot(None, None), loop=self.loop
-        )
+        return build_agent(AgentConfig.from_env(ENV), loop=self.loop)
 
     def test_identity_is_stable_for_a_seed(self) -> None:
         self.assertEqual(self.build().address, self.build().address)

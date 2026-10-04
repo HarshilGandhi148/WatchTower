@@ -42,7 +42,17 @@ class CongestionOrchestrationTests(TestCase):
     def setUp(self) -> None:
         self.service = CongestionService()
         self.coordinator = Orchestrator(TEST_ADDRESSES)
-        feeds = FeedSnapshot(parse_point_response(ADSB, T0), None)
+        feeds = FeedSnapshot(
+            parse_point_response(ADSB, T0),
+            None,
+            snapshot_id="TEST-snapshot",
+            case_id="TEST-case",
+            evidence_ids=("TEST-adsb",),
+            traffic_evidence_id="TEST-adsb",
+            window_start_utc=T0,
+            window_end_utc=T0 + timedelta(minutes=15),
+            expires_at_utc=T0 + timedelta(seconds=120),
+        )
         opening = self.service.start_cycle(feeds, T0)
         message = wire(CaseOpenedMessage(envelope=EnvelopeModel.from_envelope(opening)))
         dispatch = self.coordinator.open_case(CONGESTION, message.envelope.to_envelope(), now=T0)  # type: ignore[attr-defined]
@@ -74,6 +84,7 @@ class CongestionOrchestrationTests(TestCase):
         envelope, got_status, got_id = reply.to_reply()  # type: ignore[attr-defined]
         self.service.on_weather_reply(envelope, got_status, got_id, at)
         (ready,) = self.service.advance(at + timedelta(seconds=1)).ready
+        self.service.mark_persisted(ready)
         message = wire(
             CandidateReadyMessage(
                 envelope=EnvelopeModel.from_envelope(ready.envelope),

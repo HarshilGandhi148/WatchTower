@@ -154,6 +154,7 @@ class CaseCoordinator:
         now: datetime,
         window_start: datetime,
         window_end: datetime,
+        valid_until: datetime | None = None,
     ) -> WeatherAssessmentRequest:
         """Open a case bound to a fixed snapshot, or return the existing case's request."""
         _require_utc(now)
@@ -163,7 +164,14 @@ class CaseCoordinator:
                 raise CaseConflictError(f"case {case_id} is bound to another snapshot")
             return existing.requests[-1]
         case = _Case(
-            case_id, snapshot_id, evidence_ids, window_start, window_end, now + self._case_ttl
+            case_id,
+            snapshot_id,
+            evidence_ids,
+            window_start,
+            window_end,
+            min(now + self._case_ttl, valid_until)
+            if valid_until is not None
+            else now + self._case_ttl,
         )
         request = self._new_request(case, now)  # validates ids, window and evidence
         self._cases[case_id] = case

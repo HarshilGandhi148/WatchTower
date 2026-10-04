@@ -114,3 +114,29 @@ fixed snapshot and do not recalculate routes. The review pane compares exact
 Playback uses ordered supplied waypoints only. Queue decisions have moved into
 the versioned review footer; acknowledgement and authorization contracts above
 remain unchanged. These controls require no backend schema migration.
+
+
+## Congestion persistence schema handoff
+
+The generated 2.10.2 bindings now include immutable evidence_snapshots/evidence_records,
+FAA airport_events, optional flight_records, specialist agent_findings, assessment_requests,
+flow_candidates, projection_results and pending_deliveries. Generated reducer calls use
+one `payloadJson` string and enforce separate backend service roles. Those service tokens
+must never enter the browser. The three existing public VITE settings are unchanged.
+
+Frontend implementation remains FrontEndOwner's workstream. A flow_candidate is a saved
+suggestion, and a pending-delivery status of received means only that validation received
+it. Neither should enable approve/edit/ignore or be presented as a published advisory.
+Advisory/controller tables and per-session assignments are still pending backend work.
+
+Snapshot contentJson is versioned copied evidence/configuration/health with original UTC
+analysis window, batch membership, completeness and limitations. Projection contentJson
+contains deterministic input/assumptions/response/result and the snapshot/model identifiers.
+Keep those separate from aircraft_observations and weather_records. FAA membership is tied
+to its latest successful batch; failed/stale FAA health is unknown and an empty event set
+means no event in this feed. The live map can continue using its current observation
+transport until the frontend owner adds these mappings/subscriptions.
+
+The default shared center is now the same FAA KDTW point already documented above; radius
+is configured by the ingestion/runtime airport config. Exposing alternate airport selection
+still requires expanding the current KDTW-only shared contracts and weather integration.

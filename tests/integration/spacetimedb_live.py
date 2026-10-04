@@ -24,6 +24,7 @@ from shared.contracts import AircraftBatch, SourceFailure
 from shared.settings import SpacetimeSettings
 from shared.spacetimedb_adapter import SpacetimeAdapter, SpacetimeError, payload_json
 from tests.fixtures.spacetimedb import aircraft, weather
+from tests.integration.congestion_live import exercise_congestion
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -220,6 +221,7 @@ async def exercise(origin: str, database: str, temp: Path) -> None:
                 ingest["token"],
             )
         )
+        await exercise_congestion(origin, database, admin, ingest, request, reducer)
     finally:
         if clients.stdin:
             clients.stdin.close()
@@ -314,7 +316,8 @@ def main() -> None:
                     server.wait(timeout=5)
     print(
         "PASS: real SpacetimeDB publish, Python writes/reads, two subscriptions, "
-        "authorization, rollback, idempotency and concurrent updates (TEST database)."
+        "authorization, rollback, snapshots, durable candidates, correction, receipt, recovery, "
+        "projection isolation and concurrent updates (TEST database; TEST weather double)."
     )
 
 

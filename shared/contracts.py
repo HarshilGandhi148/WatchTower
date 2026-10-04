@@ -460,7 +460,7 @@ def _measurement(value: float | None, minimum: float, maximum: float) -> None:
 
 
 def _source(provider: str, source_ref: str, fetched: datetime) -> None:
-    if provider not in {"awc", "adsb_lol"}:
+    if provider not in {"awc", "adsb_lol", "faa"}:
         raise ValueError("Unsupported observation provider")
     if not source_ref.strip() or len(source_ref) > 2048 or any(ord(c) < 32 for c in source_ref):
         raise ValueError("Invalid source reference")

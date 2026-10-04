@@ -4,8 +4,9 @@ There are two distinct gates: repository checks that exist now, and product
 acceptance checks that must be implemented as behavior arrives.
 
 The [October 4 repository review](repository-review.md) maps the current code to
-the technical plan. None of the three agent factories or domain implementations
-is complete; tested coordination helpers are not an implemented agent system.
+the technical plan. The review predates the congestion persistence integration documented below.
+Weather interpretation, advisory publication and controller authority remain incomplete;
+tested coordination and storage are not a completed operational agent system.
 
 ## Scaffold checks in CI
 
@@ -44,6 +45,32 @@ frontend/src/lib/spacetimeTransport.test.ts, frontend/src/lib/freshness.test.ts 
 `make check-spacetime` (tests/integration/spacetimedb_live.py).
 The integration gate uses a synthetic TEST database, not real provider coverage.
 CI is configured to run it; remote CI results require pushing the change.
+
+## Congestion persistence verification
+
+Verified against the pinned local 2.10.2 module/server with a synthetic TEST database:
+
+- [x] Independent ADS-B/FAA polling, bounded requests/backoff and redacted failures;
+  successful empty batches, rejections, coverage flags and publication/fetch times retained.
+- [x] Transactional fixed snapshots with copied inputs/health/configuration and resolvable
+  stored evidence IDs; latest retained aircraft cannot inflate selected-batch metrics.
+- [x] Separate ingestion/weather/congestion/validation permissions; missing references,
+  wrong snapshots/windows/rounds, expiry, units and conflicting ID reuse rejected.
+- [x] Atomic candidate/outbox save, identical lost-response retries, notification/receipt
+  retries, duplicate suppression, restart delivery and closed-case reopen prevention.
+- [x] Correction rounds preserve snapshot/window; supported TEST projections stay in
+  derived storage and are retrievable/recomputed without changing live observations.
+- [x] Explicit oversized read errors and bounded live retention preserving copied evidence.
+
+Evidence: agents/congestion/tests/test_persistence.py, tests/adapters/test_ingestion.py,
+tests/contracts/test_persistence_adapter.py, backend/module/tests/evidence.test.ts,
+agents/validation/tests/test_protocol.py and make check-spacetime
+(tests/integration/congestion_live.py). Weather assessment is a **TEST double**.
+Expiry/retention reducer tests inject clocks; real-server recovery tests require no
+provider credentials, paid polling or timing-dependent sleeps.
+These items describe implementation verification, not operational aviation readiness,
+provider coverage, a completed Weather Agent, advisory publication or controller authority.
+The broader operational checklist below remains pending.
 
 ## Product acceptance checklist — remaining release gates
 

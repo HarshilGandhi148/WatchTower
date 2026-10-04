@@ -22,7 +22,7 @@ function authorize(ctx: Context) {
   );
 }
 
-function health(
+export function health(
   ctx: Context,
   provider: string,
   fetched: number,

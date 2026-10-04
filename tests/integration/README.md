@@ -11,7 +11,14 @@ It creates a fresh local TEST server, credentials and database, then terminates
 the server and removes temporary state. It reads no application .env or CLI token.
 Missing CLI/server dependencies fail the test.
 
-Pending: fixed-snapshot three-agent cycle, evidence persistence/pruning,
-stale/failed-feed capability
-degradation, and live/projection storage/query isolation. Ordinary CI must not
+congestion_live.py extends the same required gate with separate ingestion/weather/
+congestion/validation/unassigned identities, parser-normalized TEST batches, fixed
+snapshots, weather findings, the real congestion service and validation gateway,
+corrections, lost commit responses, restart delivery, receipts, invalid submissions,
+retention and supported TEST projection storage. The weather responder is a TEST
+double; this does not implement the Weather Agent. Expiry boundaries use injected
+clocks in backend reducer-body tests rather than real-time sleeps.
+
+Pending: operational weather interpretation, advisory publication/controller authority,
+provider coverage and full live three-agent rehearsal. Ordinary CI must not
 need provider credentials; real smoke tests produce separate evidence.
