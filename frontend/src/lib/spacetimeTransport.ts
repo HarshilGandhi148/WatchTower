@@ -1,3 +1,12 @@
+import {
+  exchangeData,
+  object,
+  sanitize,
+  strings,
+  text,
+  time,
+} from '../features/exchange/adapter';
+import type { EvidenceDetail } from '../features/exchange/types';
 import type { DashboardData } from '../features/live/types';
 import { tables, type DbConnection } from '../module_bindings';
 import type {
@@ -146,13 +155,20 @@ export function createSpacetimeTransport(): DashboardTransport | undefined {
         const alive = () => !stopped && generation === attempt;
         const emit = () => {
           if (alive() && applied && connection)
-            events.ready(
-              observationData(
+            events.ready({
+              ...observationData(
                 [...connection.db.weatherRecords.iter()],
                 [...connection.db.aircraftObservations.iter()],
                 [...connection.db.sourceHealth.iter()],
               ),
-            );
+              exchange: exchangeData({
+                requests: [...connection.db.assessmentRequests.iter()],
+                findings: [...connection.db.agentFindings.iter()],
+                candidates: [...connection.db.flowCandidates.iter()],
+                deliveries: [...connection.db.pendingDeliveries.iter()],
+                reports: [...connection.db.validationReports.iter()],
+              }),
+            });
         };
         const failed = (message: string, isError: boolean) => {
           if (!alive()) return;
@@ -177,6 +193,11 @@ export function createSpacetimeTransport(): DashboardTransport | undefined {
                 db.db.weatherRecords,
                 db.db.aircraftObservations,
                 db.db.sourceHealth,
+                db.db.assessmentRequests,
+                db.db.agentFindings,
+                db.db.flowCandidates,
+                db.db.pendingDeliveries,
+                db.db.validationReports,
               ]) {
                 table.onInsert(emit);
                 table.onUpdate(emit);
@@ -200,6 +221,11 @@ export function createSpacetimeTransport(): DashboardTransport | undefined {
                   tables.weatherRecords,
                   tables.aircraftObservations,
                   tables.sourceHealth,
+                  tables.assessmentRequests,
+                  tables.agentFindings,
+                  tables.flowCandidates,
+                  tables.pendingDeliveries,
+                  tables.validationReports,
                 ]);
             })
             .onDisconnect(() =>
@@ -229,4 +255,67 @@ export function createSpacetimeTransport(): DashboardTransport | undefined {
       throw new Error('Advisory and controller reducers are not implemented.');
     },
   };
+}
+
+export function loadEvidence(snapshotId: string): Promise<EvidenceDetail> {
+  return new Promise((resolve, reject) => {
+    const builder = createConnectionBuilder();
+    if (!builder) {
+      reject(new Error('Evidence connection unavailable.'));
+      return;
+    }
+    let db: DbConnection | undefined;
+    let finished = false;
+    const finish = (result?: EvidenceDetail) => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timer);
+      db?.disconnect();
+      if (result) resolve(result);
+      else
+        reject(new Error('Stored evidence unavailable. Retry when connected.'));
+    };
+    const timer = setTimeout(() => finish(), 10000);
+    try {
+      db = builder
+        .onConnect((connection) => {
+          if (finished) {
+            connection.disconnect();
+            return;
+          }
+          db = connection;
+          connection
+            .subscriptionBuilder()
+            .onApplied(() => {
+              try {
+                const row =
+                  connection.db.evidenceSnapshots.snapshotId.find(snapshotId);
+                if (!row) {
+                  finish();
+                  return;
+                }
+                const v = object(JSON.parse(row.contentJson));
+                finish({
+                  snapshotId: text(v.snapshot_id),
+                  windowStartUtc: time(v.window_start_utc),
+                  windowEndUtc: time(v.window_end_utc),
+                  evidenceIds: strings(v.evidence_ids),
+                  content: sanitize(v),
+                });
+              } catch {
+                finish();
+              }
+            })
+            .onError(() => finish())
+            .subscribe(
+              `SELECT * FROM evidence_snapshots WHERE snapshot_id = '${snapshotId.replaceAll("'", "''")}'`,
+            );
+        })
+        .onConnectError(() => finish())
+        .onDisconnect(() => finish())
+        .build();
+    } catch {
+      finish();
+    }
+  });
 }

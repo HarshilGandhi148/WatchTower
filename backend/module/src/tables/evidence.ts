@@ -102,3 +102,15 @@ export const flightRecords = table(
     contentJson: t.string(),
   },
 );
+
+export const validationReports = table(
+  { name: 'validation_reports', public: true },
+  {
+    reportId: t.string().primaryKey(),
+    candidateId: t.string().unique(),
+    snapshotId: t.string(),
+    createdAtUtc: t.timestamp(),
+    expiresAtUtc: t.timestamp(),
+    contentJson: t.string(),
+  },
+);

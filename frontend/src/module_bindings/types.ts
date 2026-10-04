@@ -133,6 +133,16 @@ export const SourceHealth = __t.object("SourceHealth", {
 });
 export type SourceHealth = __Infer<typeof SourceHealth>;
 
+export const ValidationReports = __t.object("ValidationReports", {
+  reportId: __t.string(),
+  candidateId: __t.string(),
+  snapshotId: __t.string(),
+  createdAtUtc: __t.timestamp(),
+  expiresAtUtc: __t.timestamp(),
+  contentJson: __t.string(),
+});
+export type ValidationReports = __Infer<typeof ValidationReports>;
+
 export const WeatherRecords = __t.object("WeatherRecords", {
   provider: __t.string(),
   airportIcao: __t.string(),

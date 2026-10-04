@@ -26,6 +26,7 @@ import {
 
 export type MapView = 'airport' | 'traffic';
 export interface AircraftMapUpdate {
+  highlightedAircraftIds?: readonly string[];
   aircraft: readonly Aircraft[];
   now: number;
   disconnected: boolean;
@@ -358,7 +359,13 @@ export function createTrafficMap(
         } else fittedBounds = null;
       }
     },
-    updateAircraft({ aircraft, now, disconnected, timezone }) {
+    updateAircraft({
+      aircraft,
+      now,
+      disconnected,
+      timezone,
+      highlightedAircraftIds = [],
+    }) {
       if (destroyed) return;
       const active = new Set(aircraft.map((a) => a.id));
       for (const [id, entry] of markers) {
@@ -416,6 +423,10 @@ export function createTrafficMap(
           aircraftItem.trackDeg < 360;
         // Retain MapLibre's positioning class when changing freshness styles.
         entry.button.classList.add('plane-marker');
+        entry.button.classList.toggle(
+          'evidence-highlight',
+          highlightedAircraftIds.includes(aircraftItem.id),
+        );
         entry.button.classList.toggle('stale-plane', stale);
         entry.label.textContent = `${aircraftItem.label}${stale ? ' · stale' : ''}`;
         entry.button.setAttribute(

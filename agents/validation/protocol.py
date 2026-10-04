@@ -85,6 +85,7 @@ class ValidationGateway:
                 raise ValueError("Unexpected sender")
             if self.storage is not None:
                 await self.storage.retrieve(ready)
+                await self.storage.report(ready)
                 await self.storage.receipt(ready)
             candidate = self.coordinator.receive_candidate(sender, ready)
         except Exception:
