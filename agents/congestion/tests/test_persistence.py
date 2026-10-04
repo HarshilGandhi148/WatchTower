@@ -14,6 +14,7 @@ from agents.congestion.service import CongestionService
 from agents.congestion.tests.test_service import validation_request, weather_reply
 from data.adsb import parse_point_response
 from shared.persistence import storage_json
+from shared.settings import AirportConfig
 from shared.spacetimedb_adapter import SpacetimeAdapter, SpacetimeError
 from tests.fixtures.spacetimedb.congestion import snapshot_fixture
 
@@ -165,3 +166,28 @@ class PersistenceTests(IsolatedAsyncioTestCase):
         self.assertEqual(nearby_traffic(stored_feeds(raw).adsb, NOW).total, 0)
         raw["health"][0]["status"] = "failed"
         self.assertIsNone(nearby_traffic(stored_feeds(raw).adsb, NOW).total)
+
+    async def test_snapshot_configuration_and_ids_survive_candidate_generation(self) -> None:
+        # The merged direct-feed path used default coordinates and invented evidence IDs.
+        feeds = replace(
+            stored_feeds(self.snapshot),
+            configuration=AirportConfig(latitude_deg=41.0, longitude_deg=-83.0, radius_nm=1),
+        )
+        service = CongestionService()
+        opening = service.start_cycle(feeds, NOW + timedelta(seconds=10))
+        self.assertEqual(opening.evidence_ids, tuple(self.snapshot["evidence_ids"]))
+        self.assertEqual(opening.snapshot_id, self.snapshot["snapshot_id"])
+        weather = service.on_assessment_request(validation_request(opening), NOW)
+        service.on_weather_reply(
+            weather_reply(weather.envelope.message_id, opening, NOW + timedelta(seconds=3)),
+            "no_material_impact",
+            "TEST-weather",
+            NOW + timedelta(seconds=3),
+        )
+        (ready,) = service.advance(NOW + timedelta(seconds=4)).ready
+        candidate = service.candidates[ready.candidate_id]
+        nearby = next(m for m in candidate.traffic_metrics if m.name == "nearby_aircraft_total")
+        self.assertEqual(nearby.value, 0)
+        self.assertEqual(candidate.window_start_utc, NOW)
+        self.assertEqual(candidate.window_end_utc, NOW + timedelta(minutes=15))
+        self.assertIsNone(candidate.projection_id)

@@ -117,3 +117,14 @@ Clock-controlled reducer tests cover expiry boundaries without timing-dependent 
 These results do not establish provider coverage, operational weather interpretation,
 advisory publication, controller authorization, or aviation readiness. Those checklist
 items remain open in docs/quality-control.md.
+
+## AeroAPI merge compatibility
+
+The AeroAPI parser, budget guard, injected-transport fetch helper and deterministic
+backlog calculations are retained. The fetch helper lives in `data/flightaware_fetch.py`
+and is not scheduled by the runtime. `ENABLE_FLIGHTAWARE` and
+`DEPARTURE_CAPACITY_PER_HOUR` do not enable paid polling or automatic projections in
+the stored-snapshot agent. Its candidates reference only persisted evidence; an offline
+projection calculation cannot create a candidate projection reference. Connecting the
+expanded AeroAPI records/backlog model to ingestion and durable projections remains a
+separate integration step. The existing TEST projection storage/retrieval gate is unchanged.

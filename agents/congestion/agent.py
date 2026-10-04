@@ -51,19 +51,6 @@ class AgentConfig:
     database: SpacetimeSettings
     airport: AirportConfig = AirportConfig()
     cycle_seconds: float = 60.0  # plan: assessment at most once per minute per case
-    aeroapi: AeroApiConfig | None = None  # None = AeroAPI disabled
-    departure_capacity_per_hour: int | None = None  # None = projections disabled
-
-    def projection_assumptions(self) -> ProjectionAssumptions | None:
-        """Operator-configured capacity enables projections; nothing is assumed otherwise."""
-        if self.departure_capacity_per_hour is None:
-            return None
-        capacity = CapacityScenario(
-            "operator-configured departure capacity",
-            self.departure_capacity_per_hour,
-            CapacityBasis.OPERATOR_CONFIGURED,
-        )
-        return ProjectionAssumptions(capacity=capacity)
 
     @classmethod
     def from_env(cls, env: Mapping[str, str]) -> AgentConfig:
@@ -87,16 +74,6 @@ class AgentConfig:
             database=SpacetimeSettings.from_env(env, role="congestion"),
             airport=airport,
         )
-
-
-def _optional_int(env: Mapping[str, str], name: str) -> int | None:
-    text = env.get(name, "").strip()
-    if not text:
-        return None
-    try:
-        return int(text)
-    except ValueError as error:
-        raise ValueError(f"{name} must be a whole number") from error
 
 
 def _utcnow() -> datetime:
