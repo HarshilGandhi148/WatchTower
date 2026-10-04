@@ -1,11 +1,11 @@
 # Ownership template
 
-| Workstream | GitHub username | Primary paths | Plan sections |
-| --- | --- | --- | --- |
-| Weather | TODO_WEATHER_OWNER | agents/weather/, data/awc.py | 4.2, 6.2, 11 |
-| Congestion + projection | TODO_CONGESTION_OWNER | agents/congestion/, data/adsb.py, data/faa_status.py, data/flightaware.py, projection/ | 4.3–4.5, 6.3, 8 |
+| Workstream                              | GitHub username       | Primary paths                                                                                                                                                                | Plan sections    |
+| --------------------------------------- | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| Weather                                 | TODO_WEATHER_OWNER    | agents/weather/, data/awc.py                                                                                                                                                 | 4.2, 6.2, 11     |
+| Congestion + projection                 | TODO_CONGESTION_OWNER | agents/congestion/, data/adsb.py, data/faa_status.py, data/flightaware.py, projection/                                                                                       | 4.3–4.5, 6.3, 8  |
 | Validation + shared backend/integration | TODO_VALIDATION_OWNER | agents/validation/, backend/, runtime/, shared/spacetimedb_adapter.py, shared/settings.py, shared/llm.py, data/ingestion.py, data/normalization.py, data/health.py, scripts/ | 6.4–6.5, 7, 9–10 |
-| Frontend | TODO_FRONTEND_OWNER | frontend/ | 12–13 |
+| Frontend                                | TODO_FRONTEND_OWNER   | frontend/                                                                                                                                                                    | 12–13            |
 
 shared/contracts.py, shared/messages.py, shared/orchestration.py, tests/contracts/,
 docs/interfaces.md, and release policies
@@ -32,5 +32,6 @@ in this table and CODEOWNERS when introduced. Do not add extra agents.
   their provenance and TEST status.
 - Coordinate root tooling and dependency files in a dedicated PR.
 
-No usernames have been assigned. CODEOWNERS lines remain comments until the
-templates are replaced by actual GitHub accounts with repository access.
+The frontend workstream is assigned to **FrontEndOwner**. This is a workstream
+identity; its GitHub username has not yet been confirmed. CODEOWNERS lines remain
+comments until actual GitHub accounts with repository access are confirmed.
