@@ -1,7 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 
-import App from './App';
+import { MissionControl } from './components/exchange/MissionControl';
 import './styles.css';
 import { createDashboardClient } from './lib/connection';
 import { createSpacetimeTransport } from './lib/spacetimeTransport';
@@ -15,6 +15,6 @@ if (!root) {
 
 createRoot(root).render(
   <StrictMode>
-    <App client={client} />
+    <MissionControl client={client} />
   </StrictMode>,
 );

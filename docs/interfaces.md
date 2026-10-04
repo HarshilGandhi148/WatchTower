@@ -280,3 +280,14 @@ metadata-rich `ingest_feed_batch` path. No fabricated evidence IDs or latest-row
 are used to construct congestion evidence. See [integration/setup](congestion-spacetime.md)
 and [frontend handoff](frontend-integration.md). Publication/controller reducers remain
 pending and must use separate authorized version/assignment checks.
+
+## Mission-control report interface proposal
+
+The frontend and validation integration now share the informational
+`ValidationReport` DTO (`shared/validation_report.py`), persisted by the
+validation-only `store_validation_report` reducer. Its six checks, outcome,
+case/snapshot/candidate/round binding and expiry are presentation evidence, not
+controller authorization. The gateway persists a report before delivery receipt.
+Generated 2.10.2 bindings accompany the additive schema change. See
+[mission-control handoff](mission-control.md) for setup and behavior. The affected
+frontend and backend owners should review this contract before merge.

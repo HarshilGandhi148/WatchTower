@@ -218,6 +218,7 @@ class SpacetimeAdapter:
             "evidence_records": "evidence_id",
             "agent_findings": "finding_id",
             "flow_candidates": "candidate_id",
+            "validation_reports": "report_id",
             "pending_deliveries": "candidate_id",
             "projection_results": "projection_id",
             "assessment_requests": "case_round",

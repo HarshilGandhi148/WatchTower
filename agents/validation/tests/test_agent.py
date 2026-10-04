@@ -84,6 +84,11 @@ class FactoryTests(TestCase):
         asyncio.set_event_loop(self.loop)
 
     def tearDown(self) -> None:
+        # Agent construction schedules SDK tasks on the loop; cancel them before closing.
+        pending = asyncio.all_tasks(self.loop)
+        for task in pending:
+            task.cancel()
+        self.loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
         self.loop.close()
         asyncio.set_event_loop(None)
 

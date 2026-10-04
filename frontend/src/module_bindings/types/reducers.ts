@@ -20,6 +20,7 @@ import ReportSourceFailureReducer from "../report_source_failure_reducer";
 import SetIngestionPermissionReducer from "../set_ingestion_permission_reducer";
 import SetServicePermissionReducer from "../set_service_permission_reducer";
 import StoreProjectionReducer from "../store_projection_reducer";
+import StoreValidationReportReducer from "../store_validation_report_reducer";
 import SubmitFlowCandidateReducer from "../submit_flow_candidate_reducer";
 import SubmitWeatherAssessmentReducer from "../submit_weather_assessment_reducer";
 
@@ -37,6 +38,7 @@ export type ReportSourceFailureParams = __Infer<typeof ReportSourceFailureReduce
 export type SetIngestionPermissionParams = __Infer<typeof SetIngestionPermissionReducer>;
 export type SetServicePermissionParams = __Infer<typeof SetServicePermissionReducer>;
 export type StoreProjectionParams = __Infer<typeof StoreProjectionReducer>;
+export type StoreValidationReportParams = __Infer<typeof StoreValidationReportReducer>;
 export type SubmitFlowCandidateParams = __Infer<typeof SubmitFlowCandidateReducer>;
 export type SubmitWeatherAssessmentParams = __Infer<typeof SubmitWeatherAssessmentReducer>;
 

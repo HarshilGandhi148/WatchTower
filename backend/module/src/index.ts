@@ -74,3 +74,5 @@ export const set_service_permission = database.reducer(
     } else if (previous) ctx.db.servicePermissions.identity.delete(identity);
   },
 );
+
+export { store_validation_report } from './reducers/reports';

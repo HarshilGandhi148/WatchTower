@@ -43,6 +43,13 @@ class ValidationStorage:
         if candidate.projection_id is not None:
             await self.projection(candidate.projection_id)
 
+    async def report(self, ready: CandidateReady) -> None:
+        from datetime import UTC, datetime
+
+        from agents.validation.reports import ReportValidator
+
+        await ReportValidator(self).report(ready, datetime.now(UTC))
+
     async def receipt(self, ready: CandidateReady) -> None:
         await self.adapter.receipt(ready)
 

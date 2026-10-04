@@ -222,6 +222,7 @@ async def exercise(origin: str, database: str, temp: Path) -> None:
             )
         )
         await exercise_congestion(origin, database, admin, ingest, request, reducer)
+        both("report", checks=6)
     finally:
         if clients.stdin:
             clients.stdin.close()
