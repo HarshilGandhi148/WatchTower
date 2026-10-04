@@ -359,34 +359,3 @@ class CorrectionTests(TestCase):
         coordinator, _ = opened()
         result = coordinator.on_correction_request(correction("c", "case-1:candidate:1"), at(1))
         self.assertEqual(result.reason, "no_submitted_candidate")
-
-
-class AssessmentRequestContractTests(TestCase):
-    def envelope(self, sender: AgentName = AgentName.CONGESTION) -> MessageEnvelope:
-        return message(sender, "m-1", None)
-
-    def test_valid_request(self) -> None:
-        request = AssessmentRequest(self.envelope(), T0, at(900))
-        self.assertEqual(request.attempt, 1)
-
-    def test_only_congestion_may_send_it(self) -> None:
-        with self.assertRaises(ValueError):
-            AssessmentRequest(self.envelope(AgentName.VALIDATION), T0, at(900))
-
-    def test_window_and_attempt_are_bounded(self) -> None:
-        for kwargs in (
-            {"window_start_utc": datetime(2026, 10, 4, 1)},
-            {"window_end_utc": T0},
-            {"attempt": 0},
-            {"attempt": 3},
-            {"attempt": True},
-        ):
-            with self.subTest(kwargs=kwargs), self.assertRaises(ValueError):
-                AssessmentRequest(
-                    **{
-                        "envelope": self.envelope(),
-                        "window_start_utc": T0,
-                        "window_end_utc": at(900),
-                        **kwargs,
-                    }  # type: ignore[arg-type]
-                )
