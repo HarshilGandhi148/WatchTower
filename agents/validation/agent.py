@@ -12,8 +12,10 @@ an advisory or writes observations or decisions. Put the returned agent in
 orchestration a second time).
 
 Run alone, ``python -m agents.validation.agent`` from the repository root starts only
-this agent: its mailbox, Agent inspector link and ASI:One chat. Coordination waits until
-congestion and weather agents send it cases.
+this agent: its mailbox, Agent inspector link and ASI:One chat. Only
+VALIDATION_AGENT_SEED is required. Without the peer addresses or database settings, the
+agent runs chat-only and logs what is missing. With them, coordination waits for
+congestion and weather to send cases.
 """
 
 from __future__ import annotations
@@ -55,9 +57,11 @@ _PHASE_VERDICT = {
 @dataclass(frozen=True, slots=True)
 class AgentConfig:
     seed: str = field(repr=False)
-    weather_address: str
-    congestion_address: str
-    database: SpacetimeSettings
+    # Peers and database are needed for case coordination. Without them the agent runs
+    # chat-only (standalone setup: inspector, mailbox and ASI:One chat).
+    weather_address: str | None = None
+    congestion_address: str | None = None
+    database: SpacetimeSettings | None = None
     llm: LlmSettings = field(default_factory=LlmSettings)
     validation: ValidationConfig = field(default_factory=ValidationConfig)
     mailbox: bool = True  # lets ASI:One reach the chat; connect it once via the inspector
@@ -77,6 +81,38 @@ class AgentConfig:
             llm=LlmSettings.from_env(env),
             port=_port(env),
         )
+
+    @classmethod
+    def standalone_from_env(cls, env: Mapping[str, str]) -> AgentConfig:
+        """Only the seed is required; missing peers or database turn coordination off."""
+        seed = env.get("VALIDATION_AGENT_SEED", "").strip()
+        if not seed:
+            raise ValueError("missing configuration: VALIDATION_AGENT_SEED")
+        weather = env.get("WEATHER_AGENT_ADDRESS", "").strip() or None
+        congestion = env.get("CONGESTION_AGENT_ADDRESS", "").strip() or None
+        try:
+            database: SpacetimeSettings | None = SpacetimeSettings.from_env(env, role="validation")
+        except ValueError:
+            database = None
+        return cls(
+            seed=seed,
+            weather_address=weather,
+            congestion_address=congestion,
+            database=database,
+            llm=LlmSettings.from_env(env),
+            port=_port(env),
+        )
+
+    def coordination_gaps(self) -> tuple[str, ...]:
+        """What is missing for case coordination; empty means it can be registered."""
+        gaps = []
+        if self.weather_address is None:
+            gaps.append("WEATHER_AGENT_ADDRESS")
+        if self.congestion_address is None:
+            gaps.append("CONGESTION_AGENT_ADDRESS")
+        if self.database is None:
+            gaps.append("SpacetimeDB settings (SPACETIMEDB_HTTP_URL, _DATABASE, _VALIDATION_TOKEN)")
+        return tuple(gaps)
 
 
 def _port(env: Mapping[str, str]) -> int:
@@ -160,32 +196,37 @@ def build_agent(
         mailbox=config.mailbox,
         publish_agent_details=config.mailbox,
     )
-    coordinator = Orchestrator(
-        {
-            AgentName.WEATHER: config.weather_address,
-            AgentName.CONGESTION: config.congestion_address,
-            AgentName.VALIDATION: agent.address,
-        }
-    )
-    store = adapter or SpacetimeAdapter(config.database)
-    storage = ValidationStorage(store)
     ledger = AdvisoryLedger()
-    callbacks = ValidationCallbacks(
-        coordinator,
-        store,
-        storage,
-        ledger,
-        config.validation,
-        clock or (lambda: datetime.now(UTC)),
-        LOGGER.info,
-    )
-    register_orchestration(
-        agent,
-        coordinator,
-        validate=callbacks.validate,
-        persist=callbacks.persist,
-        storage=storage,
-    )
+    gaps = config.coordination_gaps()
+    if gaps:
+        LOGGER.warning("Case coordination off (chat only); missing: %s", ", ".join(gaps))
+    else:
+        assert config.weather_address and config.congestion_address and config.database
+        coordinator = Orchestrator(
+            {
+                AgentName.WEATHER: config.weather_address,
+                AgentName.CONGESTION: config.congestion_address,
+                AgentName.VALIDATION: agent.address,
+            }
+        )
+        store = adapter or SpacetimeAdapter(config.database)
+        storage = ValidationStorage(store)
+        callbacks = ValidationCallbacks(
+            coordinator,
+            store,
+            storage,
+            ledger,
+            config.validation,
+            clock or (lambda: datetime.now(UTC)),
+            LOGGER.info,
+        )
+        register_orchestration(
+            agent,
+            coordinator,
+            validate=callbacks.validate,
+            persist=callbacks.persist,
+            storage=storage,
+        )
     responder = ChatResponder(ledger, config.llm, transport=llm_transport)
     agent.include(build_chat_protocol(responder, clock), publish_manifest=True)
     return agent
@@ -195,10 +236,11 @@ def main() -> None:
     """Start only the validator (mailbox, inspector, chat); values come from the environment."""
     logging.basicConfig(level=logging.INFO)
     try:
-        config = AgentConfig.from_env(os.environ)
+        config = AgentConfig.standalone_from_env(os.environ)
     except ValueError as error:
         raise SystemExit(f"Validation agent not started: {error}") from None
     agent = build_agent(config)
+    LOGGER.info("Validation agent address: %s", agent.address)
     agent.run()  # type: ignore[no-untyped-call]  # the pinned SDK leaves run() unannotated
 
 

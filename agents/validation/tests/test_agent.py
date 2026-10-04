@@ -97,6 +97,25 @@ class FactoryTests(TestCase):
         chat = next(p for p in agent.protocols.values() if ChatMessage in p.models.values())
         self.assertIsNot(chat, coordination)
 
+    def test_standalone_needs_only_the_seed_and_runs_chat_only(self) -> None:
+        seed_only = {"VALIDATION_AGENT_SEED": ENV["VALIDATION_AGENT_SEED"]}
+        config = replace(AgentConfig.standalone_from_env(seed_only), mailbox=False)
+        self.assertEqual(len(config.coordination_gaps()), 3)
+        agent = build_agent(config, loop=self.loop)
+        names = {p.name for p in agent.protocols.values()}
+        self.assertNotIn("watchtower-coordination", names)
+        self.assertTrue(any(ChatMessage in p.models.values() for p in agent.protocols.values()))
+        with self.assertRaises(ValueError):
+            AgentConfig.standalone_from_env({})
+
+    def test_standalone_with_full_settings_coordinates(self) -> None:
+        config = replace(AgentConfig.standalone_from_env(ENV), mailbox=False)
+        self.assertEqual(config.coordination_gaps(), ())
+        agent = build_agent(config, adapter=fs.FakeStore(), loop=self.loop)  # type: ignore[arg-type]
+        self.assertIn("watchtower-coordination", {p.name for p in agent.protocols.values()})
+        partial = AgentConfig.standalone_from_env({**ENV, "SPACETIMEDB_VALIDATION_TOKEN": ""})
+        self.assertIsNone(partial.database)
+
     def test_mailbox_identity_for_asi_one(self) -> None:
         agent = build_agent(AgentConfig.from_env(ENV), adapter=fs.FakeStore(), loop=self.loop)  # type: ignore[arg-type]
         self.assertTrue(agent.address.startswith("agent1"))

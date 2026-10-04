@@ -62,8 +62,10 @@ validation database role as in docs/congestion-spacetime.md.
 
 ### Run it alone (inspector, mailbox, chat)
 
-From the **repository root**, with the variables above set in the terminal (cmd: no
-quotes around values):
+From the **repository root**. Only `VALIDATION_AGENT_SEED` is required; set
+`ASI_ONE_API_KEY` for model-phrased chat answers (cmd: no quotes around values).
+Without peer addresses or complete database settings, the agent runs **chat-only** and
+logs what is missing. That is enough to get the inspector link and the address.
 
 ```bat
 python -m agents.validation.agent
