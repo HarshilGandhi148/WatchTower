@@ -134,3 +134,6 @@ The separate `make check-spacetime` command checks the local database integratio
 | **NWS / OpenSky (optional)** | Additional weather information or aircraft-position sources |
 | **unittest, Vitest, and Testing Library** | Automated tests |
 | **Ruff, mypy, ESLint, Prettier, and Gitleaks** | Code quality, formatting, and secret checks |
+
+
+By Venkata Gummidi, Harshil Gandhi, Nathan Madzelan, Krish Pipaliya
